@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>ESP32 BLE Control</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f0f0f0; }
+        .card { background: white; margin: 20px; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px #0002; }
+        button { padding: 15px 30px; font-size: 18px; border: none; border-radius: 8px; cursor: pointer; color: white; margin: 5px; }
+        .btn-on { background: #4CAF50; } .btn-off { background: #f44336; } .btn-conn { background: #2196F3; }
+        #temp { font-size: 48px; font-weight: bold; color: #333; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <button class="btn-conn" onclick="connectBLE()">Подключить BLE</button>
+        <p id="status">Статус: Отключено</p>
+    </div>
+    
+    <div class="card">
+        <div id="temp">--°C</div>
+        <p>Реле: <b id="relay">--</b></p>
+    </div>
+
+    <div class="card">
+        <input type="number" id="thr" placeholder="Порог °C" style="width:80px; padding:10px;">
+        <button class="btn-on" onclick="sendCmd('T:'+document.getElementById('thr').value)">ПУСК</button>
+        <br><br>
+        <button class="btn-on" onclick="sendCmd('ON')">ВКЛ</button>
+        <button class="btn-off" onclick="sendCmd('OFF')">ВЫКЛ</button>
+    </div>
+
+    <script>
+        let device, cmdChar;
+        const SERV_UUID = '12345678-1234-5678-1234-567812345678';
+        const CMD_UUID = '87654321-4321-4321-4321-210987654321';
+        const DATA_UUID = '11111111-2222-3333-4444-555555555555';
+
+        async function connectBLE() {
+            try {
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'ESP_MASTER' }],
+                    optionalServices: [SERV_UUID]
+                });
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERV_UUID);
+                cmdChar = await service.getCharacteristic(CMD_UUID);
+                const dataChar = await service.getCharacteristic(DATA_UUID);
+
+                dataChar.startNotifications().then(char => {
+                    char.addEventListener('characteristicvaluechanged', (e) => {
+                        const val = new TextDecoder().decode(e.target.value).split('|');
+                        document.getElementById('temp').innerText = val[0] + '°C';
+                        document.getElementById('relay').innerText = val[1];
+                    });
+                });
+                document.getElementById('status').innerText = "Статус: Подключено";
+            } catch (e) { alert(e); }
+        }
+
+        async function sendCmd(c) {
+            if (cmdChar) await cmdChar.writeValue(new TextEncoder().encode(c));
+        }
+    </script>
+</body>
+</html>
