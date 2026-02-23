@@ -2,19 +2,25 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>ESP32 BLE Control</title>
+    <title>Termo Control PWA</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="manifest" href="manifest.json">
     <style>
-        body { font-family: sans-serif; text-align: center; background: #f0f0f0; }
-        .card { background: white; margin: 20px; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px #0002; }
-        button { padding: 15px 30px; font-size: 18px; border: none; border-radius: 8px; cursor: pointer; color: white; margin: 5px; }
-        .btn-on { background: #4CAF50; } .btn-off { background: #f44336; } .btn-conn { background: #2196F3; }
-        #temp { font-size: 48px; font-weight: bold; color: #333; }
+        body { font-family: sans-serif; text-align: center; background: #f0f0f0; margin: 0; padding: 10px; }
+        .card { background: white; margin: 15px auto; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px #0002; max-width: 400px; }
+        button { padding: 15px 25px; font-size: 18px; border: none; border-radius: 8px; cursor: pointer; color: white; margin: 5px; min-width: 100px; }
+        .btn-on { background: #4CAF50; } 
+        .btn-off { background: #f44336; } 
+        .btn-conn { background: #2196F3; width: 100%; }
+        #temp { font-size: 64px; font-weight: bold; color: #333; margin: 10px 0; }
+        #status { font-size: 14px; color: #666; }
+        input { padding: 12px; font-size: 18px; width: 100px; border-radius: 8px; border: 1px solid #ccc; text-align: center; }
     </style>
 </head>
 <body>
+
     <div class="card">
-        <button class="btn-conn" onclick="connectBLE()">Подключить BLE</button>
+        <button id="connBtn" class="btn-conn" onclick="connectBLE()">ПОДКЛЮЧИТЬ BLE</button>
         <p id="status">Статус: Отключено</p>
     </div>
     
@@ -24,9 +30,12 @@
     </div>
 
     <div class="card">
-        <input type="number" id="thr" placeholder="Порог °C" style="width:80px; padding:10px;">
-        <button class="btn-on" onclick="sendCmd('T:'+document.getElementById('thr').value)">ПУСК</button>
+        <p>Авто-стоп по температуре:</p>
+        <input type="number" id="thr" placeholder="0.0" step="0.1">
+        <button class="btn-on" onclick="setThreshold()">ПУСК</button>
         <br><br>
+        <hr>
+        <p>Ручное управление:</p>
         <button class="btn-on" onclick="sendCmd('ON')">ВКЛ</button>
         <button class="btn-off" onclick="sendCmd('OFF')">ВЫКЛ</button>
     </div>
@@ -34,70 +43,98 @@
     <script>
         let device, cmdChar;
         const SERV_UUID = '12345678-1234-5678-1234-567812345678';
-        const CMD_UUID = '87654321-4321-4321-4321-210987654321';
+        const CMD_UUID  = '87654321-4321-4321-4321-210987654321';
         const DATA_UUID = '11111111-2222-3333-4444-555555555555';
-    
+
+        // Функция обновления интерфейса
+        function updateUI(str) {
+            console.log("Принято:", str);
+            const parts = str.split('|');
+            if (parts.length >= 2) {
+                const temperature = parts[0];
+                const relayStatus = parts[1];
+
+                document.getElementById('temp').innerText = temperature + '°C';
+                document.getElementById('relay').innerText = relayStatus;
+                document.getElementById('relay').style.color = (relayStatus === "ON") ? "#4CAF50" : "#f44336";
+                document.getElementById('status').innerText = "Данные: " + str;
+            }
+        }
+
         async function connectBLE() {
             try {
-                document.getElementById('status').innerText = "Поиск...";
+                document.getElementById('status').innerText = "Поиск устройства...";
+                
                 device = await navigator.bluetooth.requestDevice({
                     filters: [{ name: 'ESP_MASTER' }],
                     optionalServices: [SERV_UUID]
                 });
-    
+
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERV_UUID);
                 
+                // Характеристики
                 cmdChar = await service.getCharacteristic(CMD_UUID);
                 const dataChar = await service.getCharacteristic(DATA_UUID);
-    
-                // ВКЛЮЧАЕМ УВЕДОМЛЕНИЯ  
-                await dataChar.startNotifications();
-                console.log("Уведомления включены");
-                
-                // СРАЗУ ПОСЛЕ ВКЛЮЧЕНИЯ - ЧИТАЕМ ПЕРВОЕ ЗНАЧЕНИЕ ВРУЧНУЮ
-                const firstVal = await dataChar.readValue();
-                const firstStr = new TextDecoder().decode(firstVal);
-                console.log("Первое чтение:", firstStr);
-                updateDisplay(firstStr); // Вынесите логику обновления в отдельную функцию
-                
+
+                // 1. Сначала вешаем обработчик событий
                 dataChar.addEventListener('characteristicvaluechanged', (event) => {
-                    const str = new TextDecoder().decode(event.target.value);
-                    updateDisplay(str);
+                    const value = event.target.value;
+                    const str = new TextDecoder().decode(value);
+                    updateUI(str);
                 });
+
+                // 2. Затем включаем уведомления
+                await dataChar.startNotifications();
                 
-                function updateDisplay(str) {
-                    const parts = str.split('|');
-                    if (parts.length >= 2) {
-                        document.getElementById('temp').innerText = parts[0] + '°C';
-                        document.getElementById('relay').innerText = parts[1];
-                        document.getElementById('status').innerText = "DATA: " + str;
-                    }
-                }
-    
+                // 3. Делаем разовое чтение для мгновенного обновления
+                const initialValue = await dataChar.readValue();
+                updateUI(new TextDecoder().decode(initialValue));
+
                 document.getElementById('status').innerText = "Статус: Подключено";
-                
+                document.getElementById('connBtn').innerText = "ПОДКЛЮЧЕНО";
+                document.getElementById('connBtn').disabled = true;
+
                 device.addEventListener('gattserverdisconnected', () => {
                     document.getElementById('status').innerText = "Статус: Отключено";
+                    document.getElementById('connBtn').innerText = "ПОДКЛЮЧИТЬ BLE";
+                    document.getElementById('connBtn').disabled = false;
                 });
-    
-            } catch (e) { 
-                alert("Ошибка: " + e); 
-                document.getElementById('status').innerText = "Ошибка";
+
+            } catch (e) {
+                console.error(e);
+                alert("Ошибка: " + e);
+                document.getElementById('status').innerText = "Ошибка подключения";
             }
         }
-    
-        async function sendCmd(c) {
-            if (cmdChar) {
-                try {
-                    await cmdChar.writeValue(new TextEncoder().encode(c));
-                } catch (e) { alert("Не удалось отправить: " + e); }
+
+        function setThreshold() {
+            const val = document.getElementById('thr').value;
+            if (val) {
+                sendCmd('T:' + val);
             } else {
-                alert("Сначала подключите BLE!");
+                alert("Введите значение порога");
             }
         }
 
-    </script>
+        async function sendCmd(c) {
+            if (!cmdChar) {
+                alert("Сначала подключите BLE!");
+                return;
+            }
+            try {
+                const encoder = new TextEncoder();
+                await cmdChar.writeValue(encoder.encode(c));
+            } catch (e) {
+                console.error(e);
+                alert("Ошибка отправки: " + e);
+            }
+        }
 
+        // Регистрация Service Worker для PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(err => console.log('SW error:', err));
+        }
+    </script>
 </body>
 </html>
