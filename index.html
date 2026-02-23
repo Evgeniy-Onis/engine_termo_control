@@ -62,6 +62,10 @@
         async function sendCmd(c) {
             if (cmdChar) await cmdChar.writeValue(new TextEncoder().encode(c));
         }
+        if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+    }
     </script>
+
 </body>
 </html>
