@@ -45,32 +45,49 @@
                 });
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERV_UUID);
+                
+                // 1. Характеристика для КОМАНД (запись)
                 cmdChar = await service.getCharacteristic(CMD_UUID);
+                
+                // 2. Характеристика для ДАННЫХ (уведомления)
                 const dataChar = await service.getCharacteristic(DATA_UUID);
-    
-                // Подписка на обновления (Notifications)
+        
+                // --- ВОТ ЭТОТ БЛОК НУЖНО ПОПРАВИТЬ ---
+                // Сначала подписываемся на уведомления
                 await dataChar.startNotifications();
-                dataChar.addEventListener('characteristicvaluechanged', (e) => {
-                    const raw = new TextDecoder().decode(e.target.value);
-                    console.log("RAW:", raw);
-                    const parts = raw.split('|');
+                console.log("Уведомления активированы");
+        
+                // Затем вешаем «слушатель», который сработает при каждом notify от ESP32
+                dataChar.addEventListener('characteristicvaluechanged', (event) => {
+                    const value = event.target.value;
+                    const str = new TextDecoder().decode(value);
+                    
+                    // Разбиваем строку "25.4|ON"
+                    const parts = str.split('|');
                     if (parts.length >= 2) {
-                        // parts[0] - температура, parts[1] - статус реле
+                        // Обновляем текст на экране
                         document.getElementById('temp').innerText = parts[0] + '°C';
                         document.getElementById('relay').innerText = parts[1];
                         
-                        // Меняем цвет текста для наглядности
-                        document.getElementById('relay').style.color = (parts[1] === "ON") ? "green" : "red";
+                        // Красим текст: зеленый если ВКЛ, красный если ВЫКЛ
+                        document.getElementById('relay').style.color = (parts[1] === "ON") ? "#4CAF50" : "#f44336";
                     }
                 });
+                // -------------------------------------
+        
                 document.getElementById('status').innerText = "Статус: Подключено";
+                
+                // Обработка обрыва связи
                 device.addEventListener('gattserverdisconnected', () => {
                     document.getElementById('status').innerText = "Статус: Отключено";
                 });
-    
-            } catch (e) { console.log(e); alert("Ошибка: " + e); }
+        
+            } catch (e) { 
+                console.log(e); 
+                alert("Ошибка подключения: " + e); 
+            }
         }
-    
+
         async function sendCmd(c) {
             try {
                 if (cmdChar) await cmdChar.writeValue(new TextEncoder().encode(c));
