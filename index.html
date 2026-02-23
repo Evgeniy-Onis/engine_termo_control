@@ -39,60 +39,63 @@
     
         async function connectBLE() {
             try {
+                document.getElementById('status').innerText = "Поиск...";
                 device = await navigator.bluetooth.requestDevice({
                     filters: [{ name: 'ESP_MASTER' }],
                     optionalServices: [SERV_UUID]
                 });
+    
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERV_UUID);
                 
-                // 1. Характеристика для КОМАНД (запись)
                 cmdChar = await service.getCharacteristic(CMD_UUID);
-                
-                // 2. Характеристика для ДАННЫХ (уведомления)
                 const dataChar = await service.getCharacteristic(DATA_UUID);
-        
-                // --- ВОТ ЭТОТ БЛОК НУЖНО ПОПРАВИТЬ ---
-                // Сначала подписываемся на уведомления
+    
+                // ВКЛЮЧАЕМ УВЕДОМЛЕНИЯ
                 await dataChar.startNotifications();
-                console.log("Уведомления активированы");
-        
-                // Затем вешаем «слушатель», который сработает при каждом notify от ESP32
-                dataChar.addEventListener('characteristicvaluechanged', (event) => {
-                    const value = event.target.value;
-                    const str = new TextDecoder().decode(value);
-                    console.log("RAW:", str); // Проверь в консоли браузера
                 
-                    const parts = str.split('|');
+                // ОБРАБОТЧИК СОБЫТИЯ
+                dataChar.addEventListener('characteristicvaluechanged', (event) => {
+                    // Читаем буфер из события
+                    let value = event.target.value;
+                    let dataArray = new Uint8Array(value.buffer);
+                    let str = new TextDecoder().decode(dataArray);
+                    
+                    console.log("BLE DATA:", str); // Это появится в консоли браузера
+    
+                    let parts = str.split('|');
                     if (parts.length >= 2) {
-                        // ИСПОЛЬЗУЕМ [0] и [1] В КВАДРАТНЫХ СКОБКАХ
+                        // Обновляем HTML элементы по ID
                         document.getElementById('temp').innerText = parts[0] + '°C';
                         document.getElementById('relay').innerText = parts[1];
                         
-                        // Цвет текста для статуса
+                        // Меняем цвет текста
                         document.getElementById('relay').style.color = (parts[1] === "ON") ? "#4CAF50" : "#f44336";
                     }
                 });
-
-        
+    
                 document.getElementById('status').innerText = "Статус: Подключено";
                 
-                // Обработка обрыва связи
                 device.addEventListener('gattserverdisconnected', () => {
                     document.getElementById('status').innerText = "Статус: Отключено";
                 });
-        
+    
             } catch (e) { 
-                console.log(e); 
-                alert("Ошибка подключения: " + e); 
+                alert("Ошибка: " + e); 
+                document.getElementById('status').innerText = "Ошибка";
+            }
+        }
+    
+        async function sendCmd(c) {
+            if (cmdChar) {
+                try {
+                    await cmdChar.writeValue(new TextEncoder().encode(c));
+                } catch (e) { alert("Не удалось отправить: " + e); }
+            } else {
+                alert("Сначала подключите BLE!");
             }
         }
 
-        async function sendCmd(c) {
-            try {
-                if (cmdChar) await cmdChar.writeValue(new TextEncoder().encode(c));
-            } catch (e) { alert("Ошибка отправки: " + e); }
-        }
     </script>
 
 </body>
