@@ -52,14 +52,17 @@
                 await dataChar.startNotifications();
                 dataChar.addEventListener('characteristicvaluechanged', (e) => {
                     const raw = new TextDecoder().decode(e.target.value);
-                    console.log("Данные из BLE:", raw); // Для отладки в консоли
-                    const val = raw.split('|');
-                    if (val.length >= 2) {
-                        document.getElementById('temp').innerText = val[0] + '°C';
-                        document.getElementById('relay').innerText = val[1];
+                    console.log("RAW:", raw);
+                    const parts = raw.split('|');
+                    if (parts.length >= 2) {
+                        // parts[0] - температура, parts[1] - статус реле
+                        document.getElementById('temp').innerText = parts[0] + '°C';
+                        document.getElementById('relay').innerText = parts[1];
+                        
+                        // Меняем цвет текста для наглядности
+                        document.getElementById('relay').style.color = (parts[1] === "ON") ? "green" : "red";
                     }
                 });
-    
                 document.getElementById('status').innerText = "Статус: Подключено";
                 device.addEventListener('gattserverdisconnected', () => {
                     document.getElementById('status').innerText = "Статус: Отключено";
