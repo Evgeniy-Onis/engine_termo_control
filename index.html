@@ -61,19 +61,19 @@
                 dataChar.addEventListener('characteristicvaluechanged', (event) => {
                     const value = event.target.value;
                     const str = new TextDecoder().decode(value);
-                    
-                    // Разбиваем строку "25.4|ON"
+                    console.log("RAW:", str); // Проверь в консоли браузера
+                
                     const parts = str.split('|');
                     if (parts.length >= 2) {
-                        // Обновляем текст на экране
+                        // ИСПОЛЬЗУЕМ [0] и [1] В КВАДРАТНЫХ СКОБКАХ
                         document.getElementById('temp').innerText = parts[0] + '°C';
                         document.getElementById('relay').innerText = parts[1];
                         
-                        // Красим текст: зеленый если ВКЛ, красный если ВЫКЛ
+                        // Цвет текста для статуса
                         document.getElementById('relay').style.color = (parts[1] === "ON") ? "#4CAF50" : "#f44336";
                     }
                 });
-                // -------------------------------------
+
         
                 document.getElementById('status').innerText = "Статус: Подключено";
                 
