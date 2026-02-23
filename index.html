@@ -36,7 +36,7 @@
         const SERV_UUID = '12345678-1234-5678-1234-567812345678';
         const CMD_UUID = '87654321-4321-4321-4321-210987654321';
         const DATA_UUID = '11111111-2222-3333-4444-555555555555';
-
+    
         async function connectBLE() {
             try {
                 device = await navigator.bluetooth.requestDevice({
@@ -47,24 +47,32 @@
                 const service = await server.getPrimaryService(SERV_UUID);
                 cmdChar = await service.getCharacteristic(CMD_UUID);
                 const dataChar = await service.getCharacteristic(DATA_UUID);
-
-                dataChar.startNotifications().then(char => {
-                    char.addEventListener('characteristicvaluechanged', (e) => {
-                        const val = new TextDecoder().decode(e.target.value).split('|');
+    
+                // Подписка на обновления (Notifications)
+                await dataChar.startNotifications();
+                dataChar.addEventListener('characteristicvaluechanged', (e) => {
+                    const raw = new TextDecoder().decode(e.target.value);
+                    console.log("Данные из BLE:", raw); // Для отладки в консоли
+                    const val = raw.split('|');
+                    if (val.length >= 2) {
                         document.getElementById('temp').innerText = val[0] + '°C';
                         document.getElementById('relay').innerText = val[1];
-                    });
+                    }
                 });
+    
                 document.getElementById('status').innerText = "Статус: Подключено";
-            } catch (e) { alert(e); }
+                device.addEventListener('gattserverdisconnected', () => {
+                    document.getElementById('status').innerText = "Статус: Отключено";
+                });
+    
+            } catch (e) { console.log(e); alert("Ошибка: " + e); }
         }
-
+    
         async function sendCmd(c) {
-            if (cmdChar) await cmdChar.writeValue(new TextEncoder().encode(c));
+            try {
+                if (cmdChar) await cmdChar.writeValue(new TextEncoder().encode(c));
+            } catch (e) { alert("Ошибка отправки: " + e); }
         }
-        if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js');
-    }
     </script>
 
 </body>
