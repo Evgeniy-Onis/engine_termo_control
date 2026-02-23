@@ -51,28 +51,29 @@
                 cmdChar = await service.getCharacteristic(CMD_UUID);
                 const dataChar = await service.getCharacteristic(DATA_UUID);
     
-                // ВКЛЮЧАЕМ УВЕДОМЛЕНИЯ
+                // ВКЛЮЧАЕМ УВЕДОМЛЕНИЯ  
                 await dataChar.startNotifications();
+                console.log("Уведомления включены");
                 
-                // ОБРАБОТЧИК СОБЫТИЯ
+                // СРАЗУ ПОСЛЕ ВКЛЮЧЕНИЯ - ЧИТАЕМ ПЕРВОЕ ЗНАЧЕНИЕ ВРУЧНУЮ
+                const firstVal = await dataChar.readValue();
+                const firstStr = new TextDecoder().decode(firstVal);
+                console.log("Первое чтение:", firstStr);
+                updateDisplay(firstStr); // Вынесите логику обновления в отдельную функцию
+                
                 dataChar.addEventListener('characteristicvaluechanged', (event) => {
-                    try {
-                        let value = event.target.value;
-                        let str = new TextDecoder().decode(value);
-                        console.log("RECEIVED:", str);
-                        
-                        // ВРЕМЕННО: выведем сырую строку в статус, чтобы убедиться, что она дошла
-                        document.getElementById('status').innerText = "DATA: " + str;
-                
-                        let parts = str.split('|');
-                        if (parts.length >= 2) {
-                            document.getElementById('temp').innerText = parts[0] + '°C';
-                            document.getElementById('relay').innerText = parts[1];
-                        }
-                    } catch(e) {
-                        document.getElementById('status').innerText = "JS ERR: " + e;
-                    }
+                    const str = new TextDecoder().decode(event.target.value);
+                    updateDisplay(str);
                 });
+                
+                function updateDisplay(str) {
+                    const parts = str.split('|');
+                    if (parts.length >= 2) {
+                        document.getElementById('temp').innerText = parts[0] + '°C';
+                        document.getElementById('relay').innerText = parts[1];
+                        document.getElementById('status').innerText = "DATA: " + str;
+                    }
+                }
     
                 document.getElementById('status').innerText = "Статус: Подключено";
                 
