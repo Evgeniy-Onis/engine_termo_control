@@ -56,21 +56,21 @@
                 
                 // ОБРАБОТЧИК СОБЫТИЯ
                 dataChar.addEventListener('characteristicvaluechanged', (event) => {
-                    // Читаем буфер из события
-                    let value = event.target.value;
-                    let dataArray = new Uint8Array(value.buffer);
-                    let str = new TextDecoder().decode(dataArray);
-                    
-                    console.log("BLE DATA:", str); // Это появится в консоли браузера
-    
-                    let parts = str.split('|');
-                    if (parts.length >= 2) {
-                        // Обновляем HTML элементы по ID
-                        document.getElementById('temp').innerText = parts[0] + '°C';
-                        document.getElementById('relay').innerText = parts[1];
+                    try {
+                        let value = event.target.value;
+                        let str = new TextDecoder().decode(value);
+                        console.log("RECEIVED:", str);
                         
-                        // Меняем цвет текста
-                        document.getElementById('relay').style.color = (parts[1] === "ON") ? "#4CAF50" : "#f44336";
+                        // ВРЕМЕННО: выведем сырую строку в статус, чтобы убедиться, что она дошла
+                        document.getElementById('status').innerText = "DATA: " + str;
+                
+                        let parts = str.split('|');
+                        if (parts.length >= 2) {
+                            document.getElementById('temp').innerText = parts[0] + '°C';
+                            document.getElementById('relay').innerText = parts[1];
+                        }
+                    } catch(e) {
+                        document.getElementById('status').innerText = "JS ERR: " + e;
                     }
                 });
     
