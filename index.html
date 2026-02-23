@@ -78,11 +78,17 @@
                 const dataChar = await service.getCharacteristic(DATA_UUID);
 
                 // 1. Сначала вешаем обработчик событий
+
                 dataChar.addEventListener('characteristicvaluechanged', (event) => {
                     const value = event.target.value;
                     const str = new TextDecoder().decode(value);
+                    
+                    // ОТЛАДКА: меняем статус при каждом входящем пакете
+                    document.getElementById('status').innerText = "ОБНОВЛЕНО: " + new Date().toLocaleTimeString();
+                    
                     updateUI(str);
                 });
+
 
                 // 2. Затем включаем уведомления
                 await dataChar.startNotifications();
