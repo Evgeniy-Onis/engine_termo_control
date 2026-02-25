@@ -3,129 +3,135 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Engine Control</title>
+    <title>Engine Termo Control</title>
     <script src="https://canvasjs.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com">
     <style>
-        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
-        .card { background: #1e1e1e; border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        .temp-display { font-size: 3rem; color: #ff5722; font-weight: bold; margin: 10px 0; }
-        .status-badge { padding: 5px 15px; border-radius: 20px; font-size: 1rem; }
-        .status-on { background: #4caf50; color: white; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121212; color: white; text-align: center; padding: 15px; margin: 0; }
+        .card { background: #1e1e1e; border-radius: 20px; padding: 20px; margin-bottom: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.6); border: 1px solid #333; }
+        .temp-display { font-size: 4rem; color: #ff5722; font-weight: bold; margin: 15px 0; text-shadow: 0 0 20px rgba(255,87,34,0.3); }
+        .status-badge { padding: 8px 20px; border-radius: 25px; font-size: 1rem; font-weight: bold; text-transform: uppercase; }
+        .status-on { background: #4caf50; color: white; box-shadow: 0 0 10px rgba(76,175,80,0.5); }
         .status-off { background: #f44336; color: white; }
-        button { background: #2196f3; color: white; border: none; padding: 15px 30px; border-radius: 10px; font-size: 1.1rem; cursor: pointer; transition: 0.3s; }
-        button:active { transform: scale(0.95); }
-        input[type="range"] { width: 80%; margin: 20px 0; }
-        #chartContainer { height: 300px; width: 100%; margin-top: 20px; border-radius: 10px; overflow: hidden; }
+        
+        .btn-group { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
+        button { border: none; padding: 15px; border-radius: 12px; font-size: 1.1rem; font-weight: bold; cursor: pointer; color: white; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; }
+        button:active { transform: scale(0.96); }
+        
+        .btn-connect { background: #2196f3; width: 100%; margin-bottom: 20px; }
+        .btn-on { background: #4caf50; }
+        .btn-off { background: #f44336; }
+        .btn-set { background: #ff9800; }
+        
+        input[type="range"] { width: 100%; height: 15px; border-radius: 10px; background: #333; outline: none; margin: 20px 0; accent-color: #ff9800; }
+        #chartContainer { height: 250px; width: 100%; margin-top: 10px; border-radius: 15px; overflow: hidden; }
+        .label { color: #888; font-size: 0.9rem; }
     </style>
 </head>
 <body>
 
+    <button id="connectBtn" class="btn-connect" onclick="connectBLE()">
+        <i class="fas fa-bluetooth"></i> ПОДКЛЮЧИТЬСЯ К МАСТЕРУ
+    </button>
+
     <div class="card">
-        <h2><i class="fas fa-thermometer-half"></i> Подогрев Двигателя</h2>
-        <button id="connectBtn" onclick="connectBLE()"><i class="fas fa-bluetooth"></i> Подключиться</button>
-        
+        <div class="label">ТЕКУЩАЯ ТЕМПЕРАТУРА</div>
         <div class="temp-display"><span id="tempValue">--</span>°C</div>
-        <div>Статус реле: <span id="relayStatus" class="status-badge status-off">ВЫКЛ</span></div>
+        <div>СТАТУС: <span id="relayStatus" class="status-badge status-off">НЕТ СВЯЗИ</span></div>
     </div>
 
     <div class="card">
-        <h3>Установка порога: <span id="thrValue">40</span>°C</h3>
-        <input type="range" id="thrInput" min="20" max="80" value="40" oninput="document.getElementById('thrValue').innerText = this.value">
-        <br>
-        <button onclick="sendCmd('T:' + document.getElementById('thrInput').value)" style="background: #ff9800;">Задать порог</button>
-        <button onclick="sendCmd('OFF')" style="background: #f44336;">СТОП</button>
+        <div class="label">УСТАНОВКА ПОРОГА: <span id="thrValue" style="color:white; font-weight:bold;">40</span>°C</div>
+        <input type="range" id="thrInput" min="10" max="90" value="40" oninput="document.getElementById('thrValue').innerText = this.value">
+        
+        <div class="btn-group">
+            <button class="btn-set" onclick="sendCmd('T:' + document.getElementById('thrInput').value)">
+                <i class="fas fa-thermometer-three-quarters"></i> ЗАДАТЬ ПОРОГ И ВКЛ
+            </button>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <button class="btn-on" onclick="sendCmd('ON')"><i class="fas fa-play"></i> ВКЛ</button>
+                <button class="btn-off" onclick="sendCmd('OFF')"><i class="fas fa-stop"></i> ВЫКЛ</button>
+            </div>
+        </div>
     </div>
 
     <div id="chartContainer"></div>
 
     <script>
-        // Конфигурация UUID (должны совпадать с main_master.py)
         const SERV_UUID = '12345678-1234-5678-1234-567812345678';
         const CMD_UUID  = '87654321-4321-4321-4321-210987654321';
         const DATA_UUID = '11111111-2222-3333-4444-555555555555';
 
-        let gattServer, cmdChar, dataChar;
-        let dps = []; // Данные для графика
+        let cmdChar, dataChar;
+        let dps = []; 
         let chart = new CanvasJS.Chart("chartContainer", {
             theme: "dark2",
-            title: { text: "График температуры" },
-            data: [{ type: "line", dataPoints: dps, color: "#ff5722" }]
+            backgroundColor: "#1e1e1e",
+            title: { text: "Динамика нагрева", fontSize: 16 },
+            axisX: { labelFontSize: 10 },
+            axisY: { suffix: "°C", labelFontSize: 12 },
+            data: [{ type: "line", dataPoints: dps, color: "#ff5722", markerSize: 0 }]
         });
 
         async function connectBLE() {
             try {
-                console.log("Поиск устройства...");
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ name: 'ESP_MASTER' }],
                     optionalServices: [SERV_UUID]
                 });
 
-                console.log("Подключение к GATT...");
-                gattServer = await device.gatt.connect();
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERV_UUID);
                 
-                const service = await gattServer.getPrimaryService(SERV_UUID);
-                
-                // Характеристика для команд (Запись)
                 cmdChar = await service.getCharacteristic(CMD_UUID);
-                
-                // Характеристика для данных (Уведомления)
                 dataChar = await service.getCharacteristic(DATA_UUID);
                 
-                // ВАЖНО: Подписываемся на изменения
+                // Подписка на уведомления
                 await dataChar.startNotifications();
-                dataChar.addEventListener('characteristicvaluechanged', handleNotifications);
+                dataChar.addEventListener('characteristicvaluechanged', (event) => {
+                    let value = event.target.value;
+                    let str = new TextDecoder().decode(value);
+                    console.log("Данные:", str);
+
+                    let parts = str.split('|');
+                    if (parts.length >= 2) {
+                        let temp = parseFloat(parts[0]); // Исправлено: берем первый элемент
+                        let relay = parts[1].trim();    // Исправлено: берем второй элемент
+
+                        // Обновляем UI
+                        document.getElementById('tempValue').innerText = temp.toFixed(1);
+                        
+                        const relayBadge = document.getElementById('relayStatus');
+                        if (relay === 'ON') {
+                            relayBadge.innerText = 'РАБОТАЕТ';
+                            relayBadge.className = 'status-badge status-on';
+                        } else {
+                            relayBadge.innerText = 'ВЫКЛЮЧЕН';
+                            relayBadge.className = 'status-badge status-off';
+                        }
+
+                        // Обновляем график
+                        dps.push({ x: new Date(), y: temp });
+                        if (dps.length > 40) dps.shift();
+                        chart.render();
+                    }
+                });
                 
-                document.getElementById('connectBtn').innerText = "Подключено ✅";
+                document.getElementById('connectBtn').innerText = "ПОДКЛЮЧЕНО";
                 document.getElementById('connectBtn').style.background = "#4caf50";
-                console.log("Уведомления запущены успешно");
 
             } catch (error) {
-                console.error("Ошибка BLE:", error);
-                alert("Ошибка подключения: " + error);
-            }
-        }
-
-        function handleNotifications(event) {
-            // Получаем BufferSource
-            let value = event.target.value;
-            let decoder = new TextDecoder('utf-8');
-            let str = decoder.decode(value);
-            
-            console.log("Пришло из BLE:", str);
-
-            // Парсим строку формата "25.5|ON"
-            let parts = str.split('|');
-            if (parts.length === 2) {
-                let temp = parseFloat(parts[0]);
-                let relay = parts[1].trim();
-
-                // Обновляем текст
-                document.getElementById('tempValue').innerText = temp.toFixed(1);
-                
-                // Обновляем статус реле
-                const relayBadge = document.getElementById('relayStatus');
-                relayBadge.innerText = (relay === 'ON') ? 'РАБОТАЕТ' : 'ВЫКЛ';
-                relayBadge.className = 'status-badge ' + (relay === 'ON' ? 'status-on' : 'status-off');
-
-                // Обновляем график
-                dps.push({ x: new Date(), y: temp });
-                if (dps.length > 50) dps.shift(); // Храним только последние 50 точек
-                chart.render();
+                console.error(error);
+                alert("Ошибка: " + error);
             }
         }
 
         async function sendCmd(command) {
-            if (!cmdChar) {
-                alert("Сначала подключитесь к устройству!");
-                return;
-            }
+            if (!cmdChar) return alert("Сначала подключитесь!");
             try {
-                let encoder = new TextEncoder();
-                await cmdChar.writeValue(encoder.encode(command));
-                console.log("Команда отправлена:", command);
-            } catch (error) {
-                console.error("Ошибка отправки:", error);
+                await cmdChar.writeValue(new TextEncoder().encode(command));
+            } catch (e) {
+                console.log("Ошибка отправки:", e);
             }
         }
     </script>
