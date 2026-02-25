@@ -2,114 +2,97 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Engine Control</title>
-    <script src="https://canvasjs.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com">
+    <title>Termo Control Yandex/Chrome</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 15px; }
-        .card { background: #1e1e1e; border-radius: 20px; padding: 20px; margin-bottom: 15px; border: 1px solid #333; }
-        .temp-display { font-size: 3.5rem; color: #ff5722; font-weight: bold; margin: 10px 0; }
-        .status-badge { padding: 8px 20px; border-radius: 25px; font-size: 0.9rem; font-weight: bold; }
-        .status-on { background: #4caf50; }
-        .status-off { background: #f44336; }
-        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
-        button { background: #2196f3; color: white; border: none; padding: 15px; border-radius: 12px; font-weight: bold; cursor: pointer; width: 100%; }
-        button:active { opacity: 0.7; }
-        .btn-set { background: #ff9800; grid-column: span 2; }
-        input[type="range"] { width: 100%; margin: 20px 0; accent-color: #ff9800; }
-        #chartContainer { height: 250px; width: 100%; margin-top: 15px; }
+        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 40px; }
+        .card { background: #1e1e1e; border: 1px solid #333; border-radius: 20px; padding: 30px; display: inline-block; min-width: 300px; }
+        .temp { font-size: 5rem; color: #ff5722; margin: 20px 0; font-weight: bold; }
+        button { background: #007bff; color: white; border: none; padding: 15px 25px; border-radius: 10px; cursor: pointer; font-size: 1rem; width: 100%; margin: 5px 0; }
+        #log { background: #000; color: #0f0; padding: 10px; text-align: left; height: 150px; overflow-y: auto; font-family: monospace; margin-top: 20px; font-size: 12px; }
     </style>
 </head>
 <body>
 
-    <button id="connectBtn" onclick="connectBLE()" style="margin-bottom: 20px;">
-        <i class="fas fa-bluetooth"></i> ПОДКЛЮЧИТЬ МАСТЕР
-    </button>
-
     <div class="card">
-        <div style="color: #888;">ТЕМПЕРАТУРА</div>
-        <div class="temp-display"><span id="tempValue">--</span>°C</div>
-        <div>СТАТУС: <span id="relayStatus" class="status-badge status-off">ОТКЛЮЧЕНО</span></div>
-    </div>
-
-    <div class="card">
-        <div>ПОРОГ: <span id="thrValue">40</span>°C</div>
-        <input type="range" id="thrInput" min="10" max="90" value="40" oninput="document.getElementById('thrValue').innerText = this.value">
+        <button id="btn" onclick="connect()">ПОДКЛЮЧИТЬ МАСТЕР</button>
+        <div id="tDisp" class="temp">--°C</div>
+        <div id="rStat" style="font-size: 1.2rem;">РЕЛЕ: ОЖИДАНИЕ</div>
         
-        <div class="btn-group">
-            <button class="btn-set" onclick="sendCmd('T:' + document.getElementById('thrInput').value)">
-                ЗАДАТЬ ПОРОГ И ВКЛ
-            </button>
-            <button onclick="sendCmd('ON')" style="background: #4caf50;">ВКЛ</button>
-            <button onclick="sendCmd('OFF')" style="background: #f44336;">ВЫКЛ</button>
+        <hr style="border:0; border-top:1px solid #333; margin: 20px 0;">
+        
+        <input type="range" id="thInp" min="10" max="90" value="45" style="width:100%" oninput="document.getElementById('thVal').innerText=this.value">
+        <div>ПОРОГ: <span id="thVal">45</span>°C</div>
+        
+        <button onclick="send('T:' + document.getElementById('thInp').value)" style="background:#ff9800">ЗАДАТЬ ПОРОГ</button>
+        <div style="display:flex; gap:10px;">
+            <button onclick="send('ON')" style="background:#28a745">ВКЛ</button>
+            <button onclick="send('OFF')" style="background:#dc3545">ВЫКЛ</button>
         </div>
     </div>
 
-    <div id="chartContainer"></div>
+    <div id="log"></div>
 
     <script>
-        const SERV_UUID = '12345678-1234-5678-1234-567812345678';
-        const CMD_UUID  = '87654321-4321-4321-4321-210987654321';
-        const DATA_UUID = '11111111-2222-3333-4444-555555555555';
+        const S_UUID = '12345678-1234-5678-1234-567812345678';
+        const C_UUID = '87654321-4321-4321-4321-210987654321';
+        const D_UUID = '11111111-2222-3333-4444-555555555555';
 
-        let cmdChar = null;
-        let dps = []; 
-        let chart = new CanvasJS.Chart("chartContainer", {
-            theme: "dark2",
-            backgroundColor: "#1e1e1e",
-            data: [{ type: "line", dataPoints: dps, color: "#ff5722" }]
-        });
+        let cChar = null;
 
-        async function connectBLE() {
+        function print(m) {
+            const l = document.getElementById('log');
+            l.innerHTML += `> ${m}<br>`;
+            l.scrollTop = l.scrollHeight;
+            console.log(m);
+        }
+
+        async function connect() {
             try {
+                print("Запрос Bluetooth устройства...");
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ name: 'ESP_MASTER' }],
-                    optionalServices: [SERV_UUID]
+                    optionalServices: [S_UUID]
                 });
 
+                print("Соединение с GATT...");
                 const server = await device.gatt.connect();
-                const service = await server.getPrimaryService(SERV_UUID);
+                const service = await server.getPrimaryService(S_UUID);
                 
-                cmdChar = await service.getCharacteristic(CMD_UUID);
-                const dataChar = await service.getCharacteristic(DATA_UUID);
+                cChar = await service.getCharacteristic(C_UUID);
+                const dChar = await service.getCharacteristic(D_UUID);
                 
-                await dataChar.startNotifications();
-                dataChar.addEventListener('characteristicvaluechanged', (event) => {
-                    const rawData = new TextDecoder().decode(event.target.value);
-                    console.log("Raw:", rawData);
+                await dChar.startNotifications();
+                print("Подписка на данные активна!");
 
-                    const parts = rawData.split('|');
+                dChar.addEventListener('characteristicvaluechanged', (event) => {
+                    const raw = new TextDecoder().decode(event.target.value);
+                    print("RAW DATA: " + raw);
+
+                    const parts = raw.split('|');
                     if (parts.length >= 2) {
-                        const t = parseFloat(parts[0]); // Явно указываем индекс 0
-                        const r = parts[1].trim();     // Явно указываем индекс 1
+                        const temp = parts[0]; 
+                        const relay = parts[1].trim();
 
-                        document.getElementById('tempValue').innerText = t.toFixed(1);
-                        
-                        const badge = document.getElementById('relayStatus');
-                        badge.innerText = (r === 'ON') ? 'РАБОТАЕТ' : 'ВЫКЛЮЧЕН';
-                        badge.className = 'status-badge ' + (r === 'ON' ? 'status-on' : 'status-off');
-
-                        dps.push({ x: new Date(), y: t });
-                        if (dps.length > 30) dps.shift();
-                        chart.render();
+                        document.getElementById('tDisp').innerText = parseFloat(temp).toFixed(1) + "°C";
+                        document.getElementById('rStat').innerText = "РЕЛЕ: " + (relay === "ON" ? "РАБОТАЕТ" : "ВЫКЛ");
+                        document.getElementById('rStat').style.color = (relay === "ON" ? "#28a745" : "#dc3545");
                     }
                 });
-                
-                document.getElementById('connectBtn').innerText = "СВЯЗЬ ЕСТЬ ✅";
-                document.getElementById('connectBtn').style.background = "#4caf50";
 
+                document.getElementById('btn').innerText = "СВЯЗЬ УСТАНОВЛЕНА ✅";
             } catch (e) {
-                alert("Ошибка: " + e.message);
+                print("ОШИБКА: " + e.message);
+                if (e.message.includes("User cancelled")) print("Ты отменил выбор устройства.");
             }
         }
 
-        async function sendCmd(msg) {
-            if (!cmdChar) return alert("Нет связи!");
+        async function send(msg) {
+            if (!cChar) return alert("Сначала подключитесь!");
             try {
-                await cmdChar.writeValue(new TextEncoder().encode(msg));
+                print("Отправка команды: " + msg);
+                await cChar.writeValue(new TextEncoder().encode(msg));
             } catch (e) {
-                console.log("Send error:", e);
+                print("Ошибка записи: " + e.message);
             }
         }
     </script>
