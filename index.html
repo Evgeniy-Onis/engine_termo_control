@@ -1,145 +1,132 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Termo Control PWA</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="manifest" href="manifest.json">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engine Control</title>
+    <script src="https://canvasjs.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com">
     <style>
-        body { font-family: sans-serif; text-align: center; background: #f0f0f0; margin: 0; padding: 10px; }
-        .card { background: white; margin: 15px auto; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px #0002; max-width: 400px; }
-        button { padding: 15px 25px; font-size: 18px; border: none; border-radius: 8px; cursor: pointer; color: white; margin: 5px; min-width: 100px; }
-        .btn-on { background: #4CAF50; } 
-        .btn-off { background: #f44336; } 
-        .btn-conn { background: #2196F3; width: 100%; }
-        #temp { font-size: 64px; font-weight: bold; color: #333; margin: 10px 0; }
-        #status { font-size: 14px; color: #666; }
-        input { padding: 12px; font-size: 18px; width: 100px; border-radius: 8px; border: 1px solid #ccc; text-align: center; }
+        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
+        .card { background: #1e1e1e; border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .temp-display { font-size: 3rem; color: #ff5722; font-weight: bold; margin: 10px 0; }
+        .status-badge { padding: 5px 15px; border-radius: 20px; font-size: 1rem; }
+        .status-on { background: #4caf50; color: white; }
+        .status-off { background: #f44336; color: white; }
+        button { background: #2196f3; color: white; border: none; padding: 15px 30px; border-radius: 10px; font-size: 1.1rem; cursor: pointer; transition: 0.3s; }
+        button:active { transform: scale(0.95); }
+        input[type="range"] { width: 80%; margin: 20px 0; }
+        #chartContainer { height: 300px; width: 100%; margin-top: 20px; border-radius: 10px; overflow: hidden; }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <button id="connBtn" class="btn-conn" onclick="connectBLE()">ПОДКЛЮЧИТЬ BLE</button>
-        <p id="status">Статус: Отключено</p>
-    </div>
-    
-    <div class="card">
-        <div id="temp">--°C</div>
-        <p>Реле: <b id="relay">--</b></p>
+        <h2><i class="fas fa-thermometer-half"></i> Подогрев Двигателя</h2>
+        <button id="connectBtn" onclick="connectBLE()"><i class="fas fa-bluetooth"></i> Подключиться</button>
+        
+        <div class="temp-display"><span id="tempValue">--</span>°C</div>
+        <div>Статус реле: <span id="relayStatus" class="status-badge status-off">ВЫКЛ</span></div>
     </div>
 
     <div class="card">
-        <p>Авто-стоп по температуре:</p>
-        <input type="number" id="thr" placeholder="0.0" step="0.1">
-        <button class="btn-on" onclick="setThreshold()">ПУСК</button>
-        <br><br>
-        <hr>
-        <p>Ручное управление:</p>
-        <button class="btn-on" onclick="sendCmd('ON')">ВКЛ</button>
-        <button class="btn-off" onclick="sendCmd('OFF')">ВЫКЛ</button>
+        <h3>Установка порога: <span id="thrValue">40</span>°C</h3>
+        <input type="range" id="thrInput" min="20" max="80" value="40" oninput="document.getElementById('thrValue').innerText = this.value">
+        <br>
+        <button onclick="sendCmd('T:' + document.getElementById('thrInput').value)" style="background: #ff9800;">Задать порог</button>
+        <button onclick="sendCmd('OFF')" style="background: #f44336;">СТОП</button>
     </div>
+
+    <div id="chartContainer"></div>
 
     <script>
-        let device, cmdChar;
+        // Конфигурация UUID (должны совпадать с main_master.py)
         const SERV_UUID = '12345678-1234-5678-1234-567812345678';
         const CMD_UUID  = '87654321-4321-4321-4321-210987654321';
         const DATA_UUID = '11111111-2222-3333-4444-555555555555';
 
-        // Функция обновления интерфейса
-        function updateUI(str) {
-            console.log("Принято:", str);
-            const parts = str.split('|');
-            if (parts.length >= 2) {
-                const temperature = parts[0];
-                const relayStatus = parts[1];
-
-                document.getElementById('temp').innerText = temperature + '°C';
-                document.getElementById('relay').innerText = relayStatus;
-                document.getElementById('relay').style.color = (relayStatus === "ON") ? "#4CAF50" : "#f44336";
-                document.getElementById('status').innerText = "Данные: " + str;
-            }
-        }
+        let gattServer, cmdChar, dataChar;
+        let dps = []; // Данные для графика
+        let chart = new CanvasJS.Chart("chartContainer", {
+            theme: "dark2",
+            title: { text: "График температуры" },
+            data: [{ type: "line", dataPoints: dps, color: "#ff5722" }]
+        });
 
         async function connectBLE() {
             try {
-                document.getElementById('status').innerText = "Поиск устройства...";
-                
-                device = await navigator.bluetooth.requestDevice({
+                console.log("Поиск устройства...");
+                const device = await navigator.bluetooth.requestDevice({
                     filters: [{ name: 'ESP_MASTER' }],
                     optionalServices: [SERV_UUID]
                 });
 
-                const server = await device.gatt.connect();
-                const service = await server.getPrimaryService(SERV_UUID);
+                console.log("Подключение к GATT...");
+                gattServer = await device.gatt.connect();
                 
-                // Характеристики
+                const service = await gattServer.getPrimaryService(SERV_UUID);
+                
+                // Характеристика для команд (Запись)
                 cmdChar = await service.getCharacteristic(CMD_UUID);
-                const dataChar = await service.getCharacteristic(DATA_UUID);
-
-                // 1. Сначала вешаем обработчик событий
-
-                dataChar.addEventListener('characteristicvaluechanged', (event) => {
-                    const value = event.target.value;
-                    const str = new TextDecoder().decode(value);
-                    
-                    // ОТЛАДКА: меняем статус при каждом входящем пакете
-                    document.getElementById('status').innerText = "ОБНОВЛЕНО: " + new Date().toLocaleTimeString();
-                    
-                    updateUI(str);
-                });
-
-
-                // 2. Затем включаем уведомления
-                await dataChar.startNotifications();
                 
-                // 3. Делаем разовое чтение для мгновенного обновления
-                const initialValue = await dataChar.readValue();
-                updateUI(new TextDecoder().decode(initialValue));
+                // Характеристика для данных (Уведомления)
+                dataChar = await service.getCharacteristic(DATA_UUID);
+                
+                // ВАЖНО: Подписываемся на изменения
+                await dataChar.startNotifications();
+                dataChar.addEventListener('characteristicvaluechanged', handleNotifications);
+                
+                document.getElementById('connectBtn').innerText = "Подключено ✅";
+                document.getElementById('connectBtn').style.background = "#4caf50";
+                console.log("Уведомления запущены успешно");
 
-                document.getElementById('status').innerText = "Статус: Подключено";
-                document.getElementById('connBtn').innerText = "ПОДКЛЮЧЕНО";
-                document.getElementById('connBtn').disabled = true;
-
-                device.addEventListener('gattserverdisconnected', () => {
-                    document.getElementById('status').innerText = "Статус: Отключено";
-                    document.getElementById('connBtn').innerText = "ПОДКЛЮЧИТЬ BLE";
-                    document.getElementById('connBtn').disabled = false;
-                });
-
-            } catch (e) {
-                console.error(e);
-                alert("Ошибка: " + e);
-                document.getElementById('status').innerText = "Ошибка подключения";
+            } catch (error) {
+                console.error("Ошибка BLE:", error);
+                alert("Ошибка подключения: " + error);
             }
         }
 
-        function setThreshold() {
-            const val = document.getElementById('thr').value;
-            if (val) {
-                sendCmd('T:' + val);
-            } else {
-                alert("Введите значение порога");
+        function handleNotifications(event) {
+            // Получаем BufferSource
+            let value = event.target.value;
+            let decoder = new TextDecoder('utf-8');
+            let str = decoder.decode(value);
+            
+            console.log("Пришло из BLE:", str);
+
+            // Парсим строку формата "25.5|ON"
+            let parts = str.split('|');
+            if (parts.length === 2) {
+                let temp = parseFloat(parts[0]);
+                let relay = parts[1].trim();
+
+                // Обновляем текст
+                document.getElementById('tempValue').innerText = temp.toFixed(1);
+                
+                // Обновляем статус реле
+                const relayBadge = document.getElementById('relayStatus');
+                relayBadge.innerText = (relay === 'ON') ? 'РАБОТАЕТ' : 'ВЫКЛ';
+                relayBadge.className = 'status-badge ' + (relay === 'ON' ? 'status-on' : 'status-off');
+
+                // Обновляем график
+                dps.push({ x: new Date(), y: temp });
+                if (dps.length > 50) dps.shift(); // Храним только последние 50 точек
+                chart.render();
             }
         }
 
-        async function sendCmd(c) {
+        async function sendCmd(command) {
             if (!cmdChar) {
-                alert("Сначала подключите BLE!");
+                alert("Сначала подключитесь к устройству!");
                 return;
             }
             try {
-                const encoder = new TextEncoder();
-                await cmdChar.writeValue(encoder.encode(c));
-            } catch (e) {
-                console.error(e);
-                alert("Ошибка отправки: " + e);
+                let encoder = new TextEncoder();
+                await cmdChar.writeValue(encoder.encode(command));
+                console.log("Команда отправлена:", command);
+            } catch (error) {
+                console.error("Ошибка отправки:", error);
             }
-        }
-
-        // Регистрация Service Worker для PWA
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').catch(err => console.log('SW error:', err));
         }
     </script>
 </body>
