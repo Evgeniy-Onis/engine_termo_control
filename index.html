@@ -76,6 +76,11 @@
                 
                 cChar = await service.getCharacteristic(C_UUID);
                 dChar = await service.getCharacteristic(D_UUID);
+                try {
+                    const h = new Date().getHours();
+                    await sendCmd("TIME:" + h);
+                    print("Синхронизация времени: " + h + "ч");
+                } catch(e) { console.log("Time sync failed"); }
                 
                 // 1. Пробуем подписаться на уведомления
                 try {
