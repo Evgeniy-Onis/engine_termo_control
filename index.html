@@ -1,101 +1,91 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Termo Control PWA</title>
+    <title>Termo Control</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #f4f4f4; padding: 20px; }
-        .card { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 400px; margin: auto; }
-        .btn { padding: 15px 25px; font-size: 18px; border: none; border-radius: 10px; cursor: pointer; width: 100%; margin: 10px 0; transition: 0.3s; }
-        .btn-connect { background: #2196F3; color: white; }
-        .btn-on { background: #4CAF50; color: white; }
+        body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: white; padding: 20px; }
+        .card { background: #2d2d2d; border-radius: 20px; padding: 25px; box-shadow: 0 10px 20px rgba(0,0,0,0.3); max-width: 350px; margin: auto; }
+        #temp { font-size: 64px; margin: 10px 0; color: #ff9800; }
+        .status { font-size: 18px; margin-bottom: 20px; color: #4caf50; }
+        .btn { width: 100%; padding: 15px; margin: 10px 0; border: none; border-radius: 10px; font-size: 18px; cursor: pointer; transition: 0.2s; }
+        .btn-connect { background: #2196f3; color: white; }
         .btn-off { background: #f44336; color: white; }
-        .btn:disabled { background: #ccc; cursor: not-allowed; }
-        .status-dot { height: 10px; width: 10px; background-color: #bbb; border-radius: 50%; display: inline-block; margin-right: 5px; }
-        .online { background-color: #4CAF50; }
-        #temp-display { font-size: 48px; font-weight: bold; margin: 20px 0; color: #333; }
+        input { width: 60px; padding: 10px; border-radius: 5px; border: none; font-size: 18px; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <h2>Engine Control</h2>
-    <div>
-        <span id="status-dot" class="status-dot"></span>
-        <span id="status-text">Отключено</span>
+    <div id="status-text" style="font-size: 14px; opacity: 0.6;">Отключено</div>
+    <div id="temp">--°C</div>
+    <div class="status">Реле: <span id="relay">---</span></div>
+
+    <button id="connectBtn" class="btn btn-connect" onclick="connect()">Подключиться</button>
+    <hr style="border: 0.5px solid #444; margin: 20px 0;">
+    
+    <div style="margin-bottom: 20px;">
+        Порог: <input type="number" id="thr" value="45"> °C
     </div>
-
-    <div id="temp-display">--°C</div>
-    <p>Реле: <span id="relay-status">---</span></p>
-
-    <button id="connectBtn" class="btn btn-connect" onclick="connectToMaster()">Подключиться</button>
-    
-    <hr>
-    
-    <label>Порог температуры: <input type="number" id="thrInput" value="40" style="width: 50px; padding: 5px;"></label>
-    <button class="btn btn-on" onclick="sendCommand('T:' + document.getElementById('thrInput').value)">ВКЛ (по порогу)</button>
-    <button class="btn btn-off" onclick="sendCommand('OFF')">ВЫКЛЮЧИТЬ</button>
+    <button class="btn" style="background: #4caf50; color: white;" onclick="send('T:'+document.getElementById('thr').value)">УСТАНОВИТЬ И ВКЛ</button>
+    <button class="btn btn-off" onclick="send('OFF')">ВЫКЛЮЧИТЬ</button>
 </div>
 
 <script>
-// Настройки UUID (должны совпадать с main_for_slave_esp32.py)
 const SERVICE_UUID = '12345678-1234-5678-1234-567812345678';
-const CMD_CHAR_UUID = '87654321-4321-4321-4321-210987654321';
-const DATA_CHAR_UUID = '11111111-2222-3333-4444-555555555555';
+const CMD_UUID = '87654321-4321-4321-4321-210987654321';
+const DATA_UUID = '11111111-2222-3333-4444-555555555555';
 
 let device, server, cmdChar;
 
-async function connectToMaster() {
+async function connect() {
     const btn = document.getElementById('connectBtn');
     try {
-        btn.innerText = "Поиск...";
-        // Фильтр только по имени - это работает быстрее всего
+        // Поиск по имени - самый быстрый способ
         device = await navigator.bluetooth.requestDevice({
             filters: [{ name: 'ESP_MASTER' }],
-            optionalServices: [SERVICE_UUID] 
+            optionalServices: [SERVICE_UUID]
         });
 
-        console.log("Устройство найдено, подключаюсь к GATT...");
+        btn.innerText = "Соединение...";
         server = await device.gatt.connect();
-        
         const service = await server.getPrimaryService(SERVICE_UUID);
-        const dChar = await service.getCharacteristic(DATA_CHAR_UUID);
-        cmdChar = await service.getCharacteristic(CMD_CHAR_UUID);
+        cmdChar = await service.getCharacteristic(CMD_UUID);
+        const dataChar = await service.getCharacteristic(DATA_UUID);
 
-        await dChar.startNotifications();
-        dChar.addEventListener('characteristicvaluechanged', (event) => {
-            const val = new TextDecoder().decode(event.target.value);
-            console.log("Данные:", val);
-            const [t, r] = val.split('|');
-            // ВНИМАНИЕ: Проверь, чтобы в HTML были id="temp" и id="relay"
-            if(document.getElementById('temp')) document.getElementById('temp').innerText = t + "°C";
-            if(document.getElementById('relay')) document.getElementById('relay').innerText = r;
+        // 1. Синхронизируем время
+        const hour = new Date().getHours();
+        await cmdChar.writeValue(new TextEncoder().encode(`TIME:${hour}`));
+
+        // 2. Слушаем данные
+        await dataChar.startNotifications();
+        dataChar.addEventListener('characteristicvaluechanged', (e) => {
+            const raw = new TextDecoder().decode(e.target.value);
+            console.log("BLE In:", raw);
+            const [t, r] = raw.split('|');
+            document.getElementById('temp').innerText = t + "°C";
+            document.getElementById('relay').innerText = r;
         });
 
-        btn.innerText = "Связь OK";
-        btn.style.background = "#4CAF50";
+        document.getElementById('status-text').innerText = "В СЕТИ";
+        btn.innerText = "ПОДКЛЮЧЕНО";
+        btn.style.background = "#4caf50";
 
-    } catch (e) {
-        console.error(e);
-        btn.innerText = "Ошибка";
+    } catch (err) {
+        console.error(err);
+        alert("Ошибка: " + err.message);
+        btn.innerText = "ОШИБКА";
     }
 }
 
-    
-async function sendCommand(cmd) {
-    if (!cmdChar) {
-        alert("Сначала подключитесь!");
-        return;
-    }
+async function send(msg) {
+    if (!cmdChar) return alert("Нет связи!");
     try {
-        await cmdChar.writeValue(new TextEncoder().encode(cmd));
-        console.log("Команда отправлена: " + cmd);
-    } catch (e) {
-        console.error("Ошибка отправки:", e);
-    }
+        await cmdChar.writeValue(new TextEncoder().encode(msg));
+    } catch (e) { console.error(e); }
 }
 </script>
-
 </body>
 </html>
