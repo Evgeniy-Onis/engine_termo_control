@@ -62,23 +62,19 @@ async function connect() {
         // 2. Слушаем данные
         await dataChar.startNotifications();
         dataChar.addEventListener('characteristicvaluechanged', (event) => {
-            const val = new TextDecoder().decode(event.target.value);
-            console.log("Raw BLE Data:", val); // Проверьте этот вывод в консоли браузера
+            // Используем event.target.value.buffer или просто event.target.value
+            const value = event.target.value;
+            const raw = new TextDecoder().decode(value);
             
-            const parts = val.split('|');
-            if (parts.length === 2) {
-                const [t, r] = parts;
-                
-                // Важно: проверяем наличие элементов перед записью
+            console.log("BLE In:", raw);
+            
+            if (raw.includes('|')) {
+                const [t, r] = raw.split('|');
                 const tempEl = document.getElementById('temp');
                 const relayEl = document.getElementById('relay');
                 
                 if (tempEl) tempEl.innerText = t + "°C";
-                if (relayEl) {
-                    relayEl.innerText = r;
-                    // Можно добавить смену цвета текста для наглядности
-                    relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
-                }
+                if (relayEl) relayEl.innerText = r;
             }
         });
 
