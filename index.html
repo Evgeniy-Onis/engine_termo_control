@@ -61,12 +61,25 @@ async function connect() {
 
         // 2. Слушаем данные
         await dataChar.startNotifications();
-        dataChar.addEventListener('characteristicvaluechanged', (e) => {
-            const raw = new TextDecoder().decode(e.target.value);
-            console.log("BLE In:", raw);
-            const [t, r] = raw.split('|');
-            document.getElementById('temp').innerText = t + "°C";
-            document.getElementById('relay').innerText = r;
+        dataChar.addEventListener('characteristicvaluechanged', (event) => {
+            const val = new TextDecoder().decode(event.target.value);
+            console.log("Raw BLE Data:", val); // Проверьте этот вывод в консоли браузера
+            
+            const parts = val.split('|');
+            if (parts.length === 2) {
+                const [t, r] = parts;
+                
+                // Важно: проверяем наличие элементов перед записью
+                const tempEl = document.getElementById('temp');
+                const relayEl = document.getElementById('relay');
+                
+                if (tempEl) tempEl.innerText = t + "°C";
+                if (relayEl) {
+                    relayEl.innerText = r;
+                    // Можно добавить смену цвета текста для наглядности
+                    relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
+                }
+            }
         });
 
         document.getElementById('status-text').innerText = "В СЕТИ";
