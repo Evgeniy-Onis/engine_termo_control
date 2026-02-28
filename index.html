@@ -72,6 +72,11 @@
 
                 print("Соединение с GATT...");
                 const server = await device.gatt.connect();
+                // Отправка текущего часа для настройки расписания сна
+                const hour = new Date().getHours();
+                const encoder = new TextEncoder();
+                await commandCharacteristic.writeValue(encoder.encode(`TIME:${hour}`));
+                
                 const service = await server.getPrimaryService(S_UUID);
                 
                 cChar = await service.getCharacteristic(C_UUID);
