@@ -48,87 +48,41 @@ let device, server, cmdChar;
 
 async function connectToMaster() {
     const btn = document.getElementById('connectBtn');
-    const statusText = document.getElementById('status-text');
-    const statusDot = document.getElementById('status-dot');
-    
-    const maxAttempts = 5;
-
     try {
-        // Шаг 1: Выбор устройства (требует жеста пользователя)
-        if (!device) {
-            device = await navigator.bluetooth.requestDevice({
-                filters: [{ name: 'ESP_MASTER' }],
-                optionalServices: [SERVICE_UUID]
-            });
-        }
-
-        btn.disabled = true;
-        btn.innerText = "Пробуждение...";
-
-        // Шаг 2: Цикл повторных попыток подключения к GATT
-        for (let i = 0; i < maxAttempts; i++) {
-            try {
-                console.log(`Попытка ${i + 1}...`);
-                server = await device.gatt.connect();
-                break; // Если успешно — выходим из цикла
-            } catch (err) {
-                if (i === maxAttempts - 1) throw new Error("Устройство не отвечает. Попробуйте снова.");
-                console.log("Мастер спит, повтор через 1.5 сек...");
-                await new Promise(r => setTimeout(r, 1500));
-            }
-        }
-
-        // Шаг 3: Настройка характеристик
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        cmdChar = await service.getCharacteristic(CMD_CHAR_UUID);
-        const dataChar = await service.getCharacteristic(DATA_CHAR_UUID);
-
-        // Шаг 4: Синхронизация времени
-        const hour = new Date().getHours();
-        await cmdChar.writeValue(new TextEncoder().encode(`TIME:${hour}`));
-        console.log("Время синхронизировано: " + hour);
-
-        // Шаг 5: Подписка на данные
-        await dataChar.startNotifications();
-        console.log("Подписка на уведомления активирована");
-
-        dataChar.addEventListener('characteristicvaluechanged', (event) => {
-            const val = new TextDecoder().decode(event.target.value);
-            console.log("Данные из BLE:", val); // Проверка в консоли F12
-            
-            const parts = val.split('|');
-            if (parts.length === 2) {
-                // Используем твои оригинальные ID элементов
-                const tempElement = document.getElementById('temp');
-                const relayElement = document.getElementById('relay');
-                
-                if (tempElement) tempElement.innerText = parts[0] + "°C";
-                if (relayElement) relayElement.innerText = parts[1];
-            }
+        btn.innerText = "Поиск...";
+        // Фильтр только по имени - это работает быстрее всего
+        device = await navigator.bluetooth.requestDevice({
+            filters: [{ name: 'ESP_MASTER' }],
+            optionalServices: [SERVICE_UUID] 
         });
 
-        // Интерфейс в состояние "ОНЛАЙН"
-        statusText.innerText = "В сети";
-        statusDot.classList.add('online');
-        btn.innerText = "Подключено";
+        console.log("Устройство найдено, подключаюсь к GATT...");
+        server = await device.gatt.connect();
+        
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        const dChar = await service.getCharacteristic(DATA_CHAR_UUID);
+        cmdChar = await service.getCharacteristic(CMD_CHAR_UUID);
+
+        await dChar.startNotifications();
+        dChar.addEventListener('characteristicvaluechanged', (event) => {
+            const val = new TextDecoder().decode(event.target.value);
+            console.log("Данные:", val);
+            const [t, r] = val.split('|');
+            // ВНИМАНИЕ: Проверь, чтобы в HTML были id="temp" и id="relay"
+            if(document.getElementById('temp')) document.getElementById('temp').innerText = t + "°C";
+            if(document.getElementById('relay')) document.getElementById('relay').innerText = r;
+        });
+
+        btn.innerText = "Связь OK";
         btn.style.background = "#4CAF50";
 
-        device.addEventListener('gattserverdisconnected', () => {
-            statusText.innerText = "Отключено";
-            statusDot.classList.remove('online');
-            btn.disabled = false;
-            btn.innerText = "Подключиться";
-            btn.style.background = "#2196F3";
-        });
-
-    } catch (error) {
-        console.error(error);
-        alert(error.message);
-        btn.disabled = false;
-        btn.innerText = "Подключиться";
+    } catch (e) {
+        console.error(e);
+        btn.innerText = "Ошибка";
     }
 }
 
+    
 async function sendCommand(cmd) {
     if (!cmdChar) {
         alert("Сначала подключитесь!");
