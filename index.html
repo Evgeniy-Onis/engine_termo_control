@@ -90,11 +90,21 @@ async function connectToMaster() {
 
         // Шаг 5: Подписка на данные
         await dataChar.startNotifications();
+        console.log("Подписка на уведомления активирована");
+
         dataChar.addEventListener('characteristicvaluechanged', (event) => {
             const val = new TextDecoder().decode(event.target.value);
-            const [temp, relay] = val.split('|');
-            document.getElementById('temp-display').innerText = temp + "°C";
-            document.getElementById('relay-status').innerText = relay;
+            console.log("Данные из BLE:", val); // Проверка в консоли F12
+            
+            const parts = val.split('|');
+            if (parts.length === 2) {
+                // Используем твои оригинальные ID элементов
+                const tempElement = document.getElementById('temp');
+                const relayElement = document.getElementById('relay');
+                
+                if (tempElement) tempElement.innerText = parts[0] + "°C";
+                if (relayElement) relayElement.innerText = parts[1];
+            }
         });
 
         // Интерфейс в состояние "ОНЛАЙН"
