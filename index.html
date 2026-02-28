@@ -1,100 +1,139 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Termo Control</title>
+    <title>Termo Control PWA</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: white; padding: 20px; }
-        .card { background: #2d2d2d; border-radius: 20px; padding: 25px; box-shadow: 0 10px 20px rgba(0,0,0,0.3); max-width: 350px; margin: auto; }
-        #temp { font-size: 64px; margin: 10px 0; color: #ff9800; }
-        .status { font-size: 18px; margin-bottom: 20px; color: #4caf50; }
-        .btn { width: 100%; padding: 15px; margin: 10px 0; border: none; border-radius: 10px; font-size: 18px; cursor: pointer; transition: 0.2s; }
-        .btn-connect { background: #2196f3; color: white; }
-        .btn-off { background: #f44336; color: white; }
-        input { width: 60px; padding: 10px; border-radius: 5px; border: none; font-size: 18px; text-align: center; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #ffffff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .card { background-color: #1e1e1e; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 100%; max-width: 400px; text-align: center; }
+        h1 { margin-bottom: 0.5rem; font-size: 1.5rem; color: #e0e0e0; }
+        .status-container { margin-bottom: 1.5rem; font-size: 0.9rem; color: #888; }
+        .status-online { color: #4caf50; font-weight: bold; }
+        .temp-display { font-size: 4rem; font-weight: bold; margin: 1rem 0; color: #ff9800; text-shadow: 0 0 20px rgba(255, 152, 0, 0.2); }
+        .relay-info { margin-bottom: 2rem; font-size: 1.1rem; }
+        #relay { font-weight: bold; color: #4caf50; }
+        .btn { width: 100%; padding: 1rem; margin: 0.5rem 0; border: none; border-radius: 0.5rem; font-size: 1rem; font-weight: bold; cursor: pointer; transition: transform 0.1s, background-color 0.2s; }
+        .btn:active { transform: scale(0.98); }
+        .btn-connect { background-color: #4caf50; color: white; }
+        .btn-set { background-color: #2196f3; color: white; }
+        .btn-off { background-color: #f44336; color: white; }
+        .controls { margin-top: 1.5rem; border-top: 1px solid #333; padding-top: 1.5rem; }
+        .input-group { display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
+        input[type="number"] { background: #333; border: 1px solid #444; color: white; padding: 0.5rem; border-radius: 0.3rem; width: 60px; text-align: center; font-size: 1rem; margin: 0 10px; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>Engine Control</h2>
-    <div id="status-text" style="font-size: 14px; opacity: 0.6;">Отключено</div>
-    <div id="temp">--°C</div>
-    <div class="status">Реле: <span id="relay">---</span></div>
-
-    <button id="connectBtn" class="btn btn-connect" onclick="connect()">Подключиться</button>
-    <hr style="border: 0.5px solid #444; margin: 20px 0;">
-    
-    <div style="margin-bottom: 20px;">
-        Порог: <input type="number" id="thr" value="45"> °C
+    <h1>Engine Control</h1>
+    <div class="status-container">
+        Статус: <span id="status-text">Отключено</span>
     </div>
-    <button class="btn" style="background: #4caf50; color: white;" onclick="send('T:'+document.getElementById('thr').value)">УСТАНОВИТЬ И ВКЛ</button>
-    <button class="btn btn-off" onclick="send('OFF')">ВЫКЛЮЧИТЬ</button>
+
+    <div class="temp-display" id="temp">--°C</div>
+    <div class="relay-info">Реле: <span id="relay">---</span></div>
+
+    <button id="connectBtn" class="btn btn-connect" onclick="connectToMaster()">Подключиться</button>
+
+    <div class="controls">
+        <div class="input-group">
+            Порог: <input type="number" id="thr" value="45"> °C
+        </div>
+        <button class="btn btn-set" onclick="send('T:' + document.getElementById('thr').value)">УСТАНОВИТЬ И ВКЛ</button>
+        <button class="btn btn-off" onclick="send('OFF')">ВЫКЛЮЧИТЬ</button>
+    </div>
 </div>
 
 <script>
-const SERVICE_UUID = '12345678-1234-5678-1234-567812345678';
-const CMD_UUID = '87654321-4321-4321-4321-210987654321';
-const DATA_UUID = '11111111-2222-3333-4444-555555555555';
+    const SERVICE_UUID = '12345678-1234-5678-1234-567812345678';
+    const CMD_UUID     = '87654321-4321-4321-4321-210987654321';
+    const DATA_UUID    = '11111111-2222-3333-4444-555555555555';
 
-let device, server, cmdChar;
+    let device, server, cmdChar, dataChar;
 
-async function connect() {
-    const btn = document.getElementById('connectBtn');
-    try {
-        // Поиск по имени - самый быстрый способ
-        device = await navigator.bluetooth.requestDevice({
-            filters: [{ name: 'ESP_MASTER' }],
-            optionalServices: [SERVICE_UUID]
-        });
+    async function connectToMaster() {
+        const btn = document.getElementById('connectBtn');
+        const statusText = document.getElementById('status-text');
 
-        btn.innerText = "Соединение...";
-        server = await device.gatt.connect();
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        cmdChar = await service.getCharacteristic(CMD_UUID);
-        const dataChar = await service.getCharacteristic(DATA_UUID);
+        try {
+            console.log("Запрос устройства...");
+            device = await navigator.bluetooth.requestDevice({
+                filters: [{ name: 'ESP_MASTER' }],
+                optionalServices: [SERVICE_UUID]
+            });
 
-        // 1. Синхронизируем время
-        const hour = new Date().getHours();
-        await cmdChar.writeValue(new TextEncoder().encode(`TIME:${hour}`));
-
-        // 2. Слушаем данные
-        await dataChar.startNotifications();
-        dataChar.addEventListener('characteristicvaluechanged', (event) => {
-            // Используем event.target.value.buffer или просто event.target.value
-            const value = event.target.value;
-            const raw = new TextDecoder().decode(value);
+            console.log("Подключение к GATT...");
+            server = await device.gatt.connect();
             
-            console.log("BLE In:", raw);
+            console.log("Получение сервиса...");
+            const service = await server.getPrimaryService(SERVICE_UUID);
+
+            console.log("Получение характеристик...");
+            cmdChar = await service.getCharacteristic(CMD_UUID);
+            dataChar = await service.getCharacteristic(DATA_UUID);
+
+            // Подписка на уведомления
+            console.log("Активация уведомлений...");
+            await dataChar.startNotifications();
             
-            if (raw.includes('|')) {
-                const [t, r] = raw.split('|');
-                const tempEl = document.getElementById('temp');
-                const relayEl = document.getElementById('relay');
-                
-                if (tempEl) tempEl.innerText = t + "°C";
-                if (relayEl) relayEl.innerText = r;
-            }
-        });
+            dataChar.addEventListener('characteristicvaluechanged', (event) => {
+                const value = event.target.value;
+                const str = new TextDecoder().decode(value);
+                console.log("BLE In:", str); // Проверка в консоли F12
 
-        document.getElementById('status-text').innerText = "В СЕТИ";
-        btn.innerText = "ПОДКЛЮЧЕНО";
-        btn.style.background = "#4caf50";
+                const parts = str.split('|');
+                if (parts.length === 2) {
+                    const [t, r] = parts;
+                    document.getElementById('temp').innerText = t + "°C";
+                    const relayEl = document.getElementById('relay');
+                    relayEl.innerText = r;
+                    relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
+                }
+            });
 
-    } catch (err) {
-        console.error(err);
-        alert("Ошибка: " + err.message);
-        btn.innerText = "ОШИБКА";
+            // Синхронизация времени при подключении
+            const h = new Date().getHours();
+            await cmdChar.writeValue(new TextEncoder().encode("TIME:" + h));
+
+            statusText.innerText = "В сети";
+            statusText.className = "status-online";
+            btn.innerText = "ПОДКЛЮЧЕНО";
+            btn.disabled = true;
+            btn.style.opacity = "0.5";
+
+        } catch (error) {
+            console.error("Ошибка Блютуз:", error);
+            alert("Ошибка подключения: " + error.message);
+        }
     }
-}
 
-async function send(msg) {
-    if (!cmdChar) return alert("Нет связи!");
-    try {
-        await cmdChar.writeValue(new TextEncoder().encode(msg));
-    } catch (e) { console.error(e); }
-}
+    async function send(msg) {
+        if (!cmdChar) {
+            alert("Сначала подключитесь к устройству!");
+            return;
+        }
+        try {
+            console.log("Отправка команды:", msg);
+            await cmdChar.writeValue(new TextEncoder().encode(msg));
+        } catch (error) {
+            console.error("Ошибка отправки:", error);
+        }
+    }
+
+    // Обработка разрыва соединения
+    if (device) {
+        device.addEventListener('gattserverdisconnected', () => {
+            document.getElementById('status-text').innerText = "Отключено";
+            document.getElementById('status-text').className = "";
+            const btn = document.getElementById('connectBtn');
+            btn.innerText = "Подключиться";
+            btn.disabled = false;
+            btn.style.opacity = "1";
+            cmdChar = null;
+        });
+    }
 </script>
+
 </body>
 </html>
