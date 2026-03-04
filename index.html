@@ -80,31 +80,28 @@
             dataChar.addEventListener('characteristicvaluechanged', (event) => {
                 const value = event.target.value;
                 const str = new TextDecoder().decode(value);
-                console.log("BLE In:", str); // Теперь тут будет например "33.5|OFF|HYS"
+                console.log("BLE In:", str); 
             
                 const parts = str.split('|');
                 
-                // ПРОВЕРКА: теперь мы ждем 2 ИЛИ 3 части (для обратной совместимости)
+                // Если пришло хотя бы 2 части (Температура и Реле)
                 if (parts.length >= 2) {
-                    const t = parts[0]; // Температура
-                    const r = parts[1]; // Статус реле (ON/OFF)
-                    const hys = parts[2]; // Флаг гистерезиса (HYS или OK)
+                    const [t, r, h] = parts; // Разбираем части
             
-                    // 1. Обновляем температуру
+                    // 1. Температура
                     document.getElementById('temp').innerText = t + "°C";
             
-                    // 2. Обновляем статус реле
+                    // 2. Статус реле (текст ON/OFF)
                     const relayEl = document.getElementById('relay');
                     relayEl.innerText = r;
                     relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
             
-                    // 3. Явно пишем про ГИСТЕРЕЗИС, если пришел флаг HYS
-                    const statusText = document.getElementById('status-text'); // Твой контейнер для статуса
-                    if (hys === "HYS") {
-                        statusText.innerHTML = "В сети <span style='color: #ff9800; display: block; font-size: 0.8rem;'>" +
-                                             "РЕЖИМ: ГИСТЕРЕЗИС (-5°C)</span>";
+                    // 3. Надпись про гистерезис
+                    const statusText = document.getElementById('status-text');
+                    if (h === "HYS") {
+                        statusText.innerHTML = "В сети <br><span style='color: #ff9800; font-weight: bold; font-size: 0.8rem;'>ГИСТЕРЕЗИС (-5°C)</span>";
                     } else {
-                        statusText.innerHTML = "В сети";
+                        statusText.innerText = "В сети";
                         statusText.className = "status-online";
                     }
                 }
