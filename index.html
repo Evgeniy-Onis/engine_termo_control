@@ -80,15 +80,33 @@
             dataChar.addEventListener('characteristicvaluechanged', (event) => {
                 const value = event.target.value;
                 const str = new TextDecoder().decode(value);
-                console.log("BLE In:", str); // Проверка в консоли F12
-
+                console.log("BLE In:", str); // Теперь тут будет например "33.5|OFF|HYS"
+            
                 const parts = str.split('|');
-                if (parts.length === 2) {
-                    const [t, r] = parts;
+                
+                // ПРОВЕРКА: теперь мы ждем 2 ИЛИ 3 части (для обратной совместимости)
+                if (parts.length >= 2) {
+                    const t = parts[0]; // Температура
+                    const r = parts[1]; // Статус реле (ON/OFF)
+                    const hys = parts[2]; // Флаг гистерезиса (HYS или OK)
+            
+                    // 1. Обновляем температуру
                     document.getElementById('temp').innerText = t + "°C";
+            
+                    // 2. Обновляем статус реле
                     const relayEl = document.getElementById('relay');
                     relayEl.innerText = r;
                     relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
+            
+                    // 3. Явно пишем про ГИСТЕРЕЗИС, если пришел флаг HYS
+                    const statusText = document.getElementById('status-text'); // Твой контейнер для статуса
+                    if (hys === "HYS") {
+                        statusText.innerHTML = "В сети <span style='color: #ff9800; display: block; font-size: 0.8rem;'>" +
+                                             "РЕЖИМ: ГИСТЕРЕЗИС (-5°C)</span>";
+                    } else {
+                        statusText.innerHTML = "В сети";
+                        statusText.className = "status-online";
+                    }
                 }
             });
 
