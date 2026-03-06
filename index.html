@@ -3,149 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Termo Control PWA</title>
+    <title>Engine Termo Control</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #ffffff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background-color: #1e1e1e; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 100%; max-width: 400px; text-align: center; }
-        h1 { margin-bottom: 0.5rem; font-size: 1.5rem; color: #e0e0e0; }
-        .status-container { margin-bottom: 1.5rem; font-size: 0.9rem; color: #888; }
-        .status-online { color: #4caf50; font-weight: bold; }
-        .temp-display { font-size: 4rem; font-weight: bold; margin: 1rem 0; color: #ff9800; text-shadow: 0 0 20px rgba(255, 152, 0, 0.2); }
-        .relay-info { margin-bottom: 2rem; font-size: 1.1rem; }
-        #relay { font-weight: bold; color: #4caf50; }
-        .btn { width: 100%; padding: 1rem; margin: 0.5rem 0; border: none; border-radius: 0.5rem; font-size: 1rem; font-weight: bold; cursor: pointer; transition: transform 0.1s, background-color 0.2s; }
-        .btn:active { transform: scale(0.98); }
-        .btn-connect { background-color: #4caf50; color: white; }
-        .btn-set { background-color: #2196f3; color: white; }
-        .btn-off { background-color: #f44336; color: white; }
-        .controls { margin-top: 1.5rem; border-top: 1px solid #333; padding-top: 1.5rem; }
-        .input-group { display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
-        input[type="number"] { background: #333; border: 1px solid #444; color: white; padding: 0.5rem; border-radius: 0.3rem; width: 60px; text-align: center; font-size: 1rem; margin: 0 10px; }
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .card { background: #1e1e1e; padding: 2rem; border-radius: 1.5rem; width: 100%; max-width: 380px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .status-container { font-size: 0.9rem; margin-bottom: 1rem; color: #888; }
+        .temp-display { font-size: 4.5rem; font-weight: bold; color: #ff9800; margin: 0.5rem 0; }
+        .relay-info { font-size: 1.2rem; margin-bottom: 1.5rem; }
+        .btn { width: 100%; padding: 1rem; margin: 0.5rem 0; border: none; border-radius: 0.8rem; font-size: 1rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-connect { background: #4caf50; color: white; }
+        .btn-set { background: #2196f3; color: white; }
+        .btn-off { background: #f44336; color: white; }
+        .btn:disabled { opacity: 0.4; cursor: default; }
+        
+        .controls-box { background: #2a2a2a; padding: 1.2rem; border-radius: 1rem; margin-top: 1rem; text-align: left; }
+        input[type="range"] { width: 100%; margin: 15px 0; cursor: pointer; }
+        
+        .scheduler { border-top: 1px dashed #444; margin-top: 1.2rem; padding-top: 1rem; }
+        .sched-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+        input[type="time"] { background: #333; color: white; border: 1px solid #444; padding: 5px; border-radius: 5px; }
+        label { font-size: 0.85rem; cursor: pointer; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h1>Engine Control</h1>
-    <div class="status-container">
-        Статус: <span id="status-text">Отключено</span>
-    </div>
-
+    <div class="status-container" id="status-line">Статус: Отключено</div>
     <div class="temp-display" id="temp">--°C</div>
     <div class="relay-info">Реле: <span id="relay">---</span></div>
 
-    <button id="connectBtn" class="btn btn-connect" onclick="connectToMaster()">Подключиться</button>
+    <button id="connectBtn" class="btn btn-connect" onclick="connect()">ПОДКЛЮЧИТЬСЯ</button>
 
-    <div class="controls">
-        <div class="input-group">
-            Порог: <input type="number" id="thr" value="45"> °C
+    <div class="controls-box">
+        <div style="display:flex; justify-content: space-between;">
+            <span>Порог:</span>
+            <span style="color:#ff9800; font-weight:bold;"><span id="thrVal">45</span>°C</span>
         </div>
-        <button class="btn btn-set" onclick="send('T:' + document.getElementById('thr').value)">УСТАНОВИТЬ И ВКЛ</button>
+        <input type="range" id="thrSlider" min="20" max="70" value="45" 
+               oninput="document.getElementById('thrVal').innerText = this.value">
+        
+        <button class="btn btn-set" onclick="send('T:' + document.getElementById('thrSlider').value)">УСТАНОВИТЬ И ВКЛ</button>
         <button class="btn btn-off" onclick="send('OFF')">ВЫКЛЮЧИТЬ</button>
+
+        <div class="scheduler">
+            <div class="sched-row">
+                <label>Время:</label>
+                <input type="time" id="schedTime" value="07:00">
+            </div>
+            <div class="sched-row">
+                <label><input type="checkbox" id="checkTime"> По времени</label>
+                <label><input type="checkbox" id="checkInt"> Интервалы</label>
+            </div>
+        </div>
     </div>
 </div>
 
 <script>
-    const SERVICE_UUID = '12345678-1234-5678-1234-567812345678';
-    const CMD_UUID     = '87654321-4321-4321-4321-210987654321';
-    const DATA_UUID    = '11111111-2222-3333-4444-555555555555';
+    const UUID_SERV = '12345678-1234-5678-1234-567812345678';
+    const UUID_CMD  = '87654321-4321-4321-4321-210987654321';
+    const UUID_DATA = '11111111-2222-3333-4444-555555555555';
 
-    let device, server, cmdChar, dataChar;
+    let device, cmdChar;
 
-    async function connectToMaster() {
-        const btn = document.getElementById('connectBtn');
-        const statusText = document.getElementById('status-text');
-
+    async function connect() {
         try {
-            console.log("Запрос устройства...");
             device = await navigator.bluetooth.requestDevice({
-                filters: [{ name: 'ESP_MASTER' }],
-                optionalServices: [SERVICE_UUID]
+                filters: [{ name: 'TermoMaster' }],
+                optionalServices: [UUID_SERV]
             });
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(UUID_SERV);
+            cmdChar = await service.getCharacteristic(UUID_CMD);
+            const dataChar = await service.getCharacteristic(UUID_DATA);
 
-            console.log("Подключение к GATT...");
-            server = await device.gatt.connect();
-            
-            console.log("Получение сервиса...");
-            const service = await server.getPrimaryService(SERVICE_UUID);
-
-            console.log("Получение характеристик...");
-            cmdChar = await service.getCharacteristic(CMD_UUID);
-            dataChar = await service.getCharacteristic(DATA_UUID);
-
-            // Подписка на уведомления
-            console.log("Активация уведомлений...");
             await dataChar.startNotifications();
-            
-            dataChar.addEventListener('characteristicvaluechanged', (event) => {
-                const value = event.target.value;
-                const str = new TextDecoder().decode(value);
-                console.log("BLE In:", str); // Проверяем формат: должно быть "33.5|ON|L" или "33.5|OFF|OK"
-            
-                const parts = str.split('|');
-                if (parts.length >= 2) {
-                    const t = parts[0];
-                    const r = parts[1];
-                    const lock = parts[2]; // Это твоя "L" или "OK"
-            
-                    // Обновляем температуру
-                    document.getElementById('temp').innerText = t + "°C";
-            
-                    // Обновляем статус реле
-                    const relayEl = document.getElementById('relay');
-                    relayEl.innerText = r;
-                    relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
-            
-                    // Обновляем текст статуса (Гистерезис)
-                    const statusText = document.getElementById('status-text');
-                    if (lock === "L") {
-                        statusText.innerHTML = "Статус: <span style='color: #ff9800; font-weight: bold;'>ГИСТЕРЕЗИС (-5°C)</span>";
-                    } else {
-                        statusText.innerHTML = "Статус: <span class='status-online'>В сети</span>";
-                    }
+            dataChar.addEventListener('characteristicvaluechanged', (e) => {
+                const str = new TextDecoder().decode(e.target.value);
+                const [t, r, lock] = str.split('|');
+                
+                document.getElementById('temp').innerText = t + "°C";
+                const relayEl = document.getElementById('relay');
+                relayEl.innerText = r;
+                relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
+
+                const stLine = document.getElementById('status-line');
+                if (lock === "L") {
+                    stLine.innerHTML = "Статус: <span style='color:#ff9800; font-weight:bold;'>ГИСТЕРЕЗИС (-5°C)</span>";
+                } else {
+                    stLine.innerHTML = "Статус: <span style='color:#4caf50;'>В сети</span>";
                 }
             });
 
-            // Синхронизация времени при подключении
-            const h = new Date().getHours();
-            await cmdChar.writeValue(new TextEncoder().encode("TIME:" + h));
+            // Отправляем текущее время телефона для синхронизации
+            const now = new Date();
+            await send(`TIME:${now.getHours()},${now.getMinutes()}`);
 
-            statusText.innerText = "В сети";
-            statusText.className = "status-online";
-            btn.innerText = "ПОДКЛЮЧЕНО";
-            btn.disabled = true;
-            btn.style.opacity = "0.5";
-
-        } catch (error) {
-            console.error("Ошибка Блютуз:", error);
-            alert("Ошибка подключения: " + error.message);
-        }
+            document.getElementById('connectBtn').innerText = "ПОДКЛЮЧЕНО";
+            document.getElementById('connectBtn').disabled = true;
+        } catch (err) { alert("Ошибка: " + err); }
     }
 
     async function send(msg) {
-        if (!cmdChar) {
-            alert("Сначала подключитесь к устройству!");
-            return;
-        }
+        if (!cmdChar) return;
         try {
-            console.log("Отправка команды:", msg);
             await cmdChar.writeValue(new TextEncoder().encode(msg));
-        } catch (error) {
-            console.error("Ошибка отправки:", error);
-        }
-    }
-
-    // Обработка разрыва соединения
-    if (device) {
-        device.addEventListener('gattserverdisconnected', () => {
-            document.getElementById('status-text').innerText = "Отключено";
-            document.getElementById('status-text').className = "";
-            const btn = document.getElementById('connectBtn');
-            btn.innerText = "Подключиться";
-            btn.disabled = false;
-            btn.style.opacity = "1";
-            cmdChar = null;
-        });
+            console.log("Sent:", msg);
+        } catch (e) { console.error(e); }
     }
 </script>
 
