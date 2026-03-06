@@ -14,7 +14,6 @@
         .btn-connect { background: #4caf50; color: white; }
         .btn-set { background: #2196f3; color: white; }
         .btn-off { background: #f44336; color: white; }
-        .btn:disabled { opacity: 0.4; cursor: default; }
         
         .controls-box { background: #2a2a2a; padding: 1.2rem; border-radius: 1rem; margin-top: 1rem; text-align: left; }
         input[type="range"] { width: 100%; margin: 15px 0; cursor: pointer; }
@@ -22,7 +21,6 @@
         .scheduler { border-top: 1px dashed #444; margin-top: 1.2rem; padding-top: 1rem; }
         .sched-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
         input[type="time"] { background: #333; color: white; border: 1px solid #444; padding: 5px; border-radius: 5px; }
-        label { font-size: 0.85rem; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -67,10 +65,14 @@
 
     async function connect() {
         try {
+            // Улучшенный фильтр: ищем по UUID сервиса, это надежнее чем по имени
             device = await navigator.bluetooth.requestDevice({
-                filters: [{ name: 'TermoMaster' }],
-                optionalServices: [UUID_SERV]
+                filters: [
+                    { services: [UUID_SERV] },
+                    { namePrefix: 'Termo' }
+                ]
             });
+
             const server = await device.gatt.connect();
             const service = await server.getPrimaryService(UUID_SERV);
             cmdChar = await service.getCharacteristic(UUID_CMD);
@@ -79,36 +81,40 @@
             await dataChar.startNotifications();
             dataChar.addEventListener('characteristicvaluechanged', (e) => {
                 const str = new TextDecoder().decode(e.target.value);
-                const [t, r, lock] = str.split('|');
-                
-                document.getElementById('temp').innerText = t + "°C";
-                const relayEl = document.getElementById('relay');
-                relayEl.innerText = r;
-                relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
+                const parts = str.split('|');
+                if (parts.length >= 2) {
+                    const [t, r, lock] = parts;
+                    document.getElementById('temp').innerText = t + "°C";
+                    const relayEl = document.getElementById('relay');
+                    relayEl.innerText = r;
+                    relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
 
-                const stLine = document.getElementById('status-line');
-                if (lock === "L") {
-                    stLine.innerHTML = "Статус: <span style='color:#ff9800; font-weight:bold;'>ГИСТЕРЕЗИС (-5°C)</span>";
-                } else {
-                    stLine.innerHTML = "Статус: <span style='color:#4caf50;'>В сети</span>";
+                    const stLine = document.getElementById('status-line');
+                    if (lock === "L") {
+                        stLine.innerHTML = "Статус: <span style='color:#ff9800; font-weight:bold;'>ГИСТЕРЕЗИС (-5°C)</span>";
+                    } else {
+                        stLine.innerHTML = "Статус: <span style='color:#4caf50;'>В сети</span>";
+                    }
                 }
             });
 
-            // Отправляем текущее время телефона для синхронизации
+            // Синхронизация времени
             const now = new Date();
             await send(`TIME:${now.getHours()},${now.getMinutes()}`);
 
             document.getElementById('connectBtn').innerText = "ПОДКЛЮЧЕНО";
-            document.getElementById('connectBtn').disabled = true;
-        } catch (err) { alert("Ошибка: " + err); }
+            document.getElementById('connectBtn').style.background = "#333";
+        } catch (err) { 
+            console.error(err);
+            alert("Не удалось найти устройство. Убедитесь, что Master включен и Bluetooth активен."); 
+        }
     }
 
     async function send(msg) {
         if (!cmdChar) return;
         try {
             await cmdChar.writeValue(new TextEncoder().encode(msg));
-            console.log("Sent:", msg);
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error("Ошибка отправки:", e); }
     }
 </script>
 
