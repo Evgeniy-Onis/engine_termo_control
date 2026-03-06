@@ -82,13 +82,20 @@
             dataChar.addEventListener('characteristicvaluechanged', (e) => {
                 const str = new TextDecoder().decode(e.target.value);
                 const parts = str.split('|');
-                if (parts.length >= 2) {
+                
+                // Проверяем, что пришло именно 3 части (темп, реле, замок)
+                if (parts.length === 3) {
                     const [t, r, lock] = parts;
+                    
+                    // 1. Обновляем температуру
                     document.getElementById('temp').innerText = t + "°C";
+                    
+                    // 2. Обновляем статус реле
                     const relayEl = document.getElementById('relay');
                     relayEl.innerText = r;
                     relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
-
+            
+                    // 3. Обновляем статусную строку (самая верхняя надпись)
                     const stLine = document.getElementById('status-line');
                     if (lock === "L") {
                         stLine.innerHTML = "Статус: <span style='color:#ff9800; font-weight:bold;'>ГИСТЕРЕЗИС (-5°C)</span>";
