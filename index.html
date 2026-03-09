@@ -142,9 +142,25 @@
         } catch (err) { console.error(err); alert("Ошибка Bluetooth: " + err); }
     }
 
+    let isSending = false; // Флаг занятости канала
+    
     async function send(msg) {
         if (!cmdChar) return;
-        try { await cmdChar.writeValue(new TextEncoder().encode(msg)); } catch (e) { console.error(e); }
+        
+        // Если уже что-то шлется, ждем немного или выходим
+        if (isSending) {
+            console.log("Занято, жду...");
+            return; 
+        }
+        
+        isSending = true;
+        try {
+            await cmdChar.writeValue(new TextEncoder().encode(msg));
+        } catch (e) {
+            console.error("Ошибка отправки:", e);
+        } finally {
+            isSending = false; // Освобождаем канал
+        }
     }
 </script>
 
