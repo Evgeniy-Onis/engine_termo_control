@@ -63,6 +63,45 @@
 
     let device, cmdChar;
 
+
+    // Функция блокировки кнопок
+    function updateUIState() {
+        const isTimed = document.getElementById('checkTime').checked;
+        const isInt = document.getElementById('checkInt').checked;
+        const btnSet = document.querySelector('.btn-set');
+        
+        if (isTimed || isInt) {
+            btnSet.disabled = true;
+            btnSet.style.opacity = "0.5";
+            btnSet.innerText = isTimed ? "РЕЖИМ: ПО ВРЕМЕНИ" : "РЕЖИМ: ИНТЕРВАЛЫ";
+        } else {
+            btnSet.disabled = false;
+            btnSet.style.opacity = "1";
+            btnSet.innerText = "УСТАНОВИТЬ И ВКЛ";
+        }
+    }
+    
+    // Слушатели для чекбоксов
+    document.getElementById('checkTime').addEventListener('change', (e) => {
+        updateUIState();
+        if(e.target.checked) alert("Установлен запуск по времени. Кнопка 'Установить' заблокирована.");
+        sendConfig();
+    });
+    
+    document.getElementById('checkInt').addEventListener('change', () => {
+        updateUIState();
+        sendConfig();
+    });
+    
+    // Отправка полной конфигурации на Master
+    async function sendConfig() {
+        const time = document.getElementById('schedTime').value;
+        const isTimed = document.getElementById('checkTime').checked ? 1 : 0;
+        const isInt = document.getElementById('checkInt').checked ? 1 : 0;
+        const thr = document.getElementById('thrSlider').value;
+        // Формат: CFG:порог,время,чек_время,чек_инт
+        await send(`CFG:${thr},${time},${isTimed},${isInt}`);
+    }
     async function connect() {
         try {
             // Улучшенный фильтр: ищем по UUID сервиса, это надежнее чем по имени
