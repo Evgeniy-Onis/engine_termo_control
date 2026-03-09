@@ -84,14 +84,18 @@
     
     // Теперь просто переключаем режимы без алертов
     async function toggleMode(mode) {
-        if (mode === 'time' && document.getElementById('checkTime').checked) {
-            document.getElementById('checkInt').checked = false;
-        }
-        if (mode === 'int' && document.getElementById('checkInt').checked) {
-            document.getElementById('checkTime').checked = false;
-        }
+        // 1. Сначала меняем состояние в DOM
+        const timeCheck = document.getElementById('checkTime');
+        const intCheck = document.getElementById('checkInt');
+        
+        if (mode === 'time') intCheck.checked = false;
+        if (mode === 'int') timeCheck.checked = false;
+    
+        // 2. Обновляем вид кнопки
         updateUIState();
-        await sendConfig(); // Отправляем на Master, чтобы он запомнил выбор
+        
+        // 3. Отправляем настройки
+        await sendConfig();
     }
     
     // Добавим функцию для клика по заблокированной кнопке (опционально)
