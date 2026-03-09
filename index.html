@@ -109,13 +109,19 @@
         const thr = document.getElementById('thrSlider').value;
         await send(`T:${thr}`);
     }
-
+    
     async function sendConfig() {
         const thr = document.getElementById('thrSlider').value;
-        const time = document.getElementById('schedTime').value;
+        const time = document.getElementById('schedTime').value; // Берем то, что в поле
         const useTime = document.getElementById('checkTime').checked ? 1 : 0;
         const useInt = document.getElementById('checkInt').checked ? 1 : 0;
-        // Отправляем всё одним пакетом для надежности
+        
+        // ПРОВЕРКА: если время пустое, не шлем конфиг
+        if (!time) {
+            console.log("Время не задано, пропуск отправки");
+            return;
+        }
+        
         await send(`CFG:${thr},${time},${useTime},${useInt}`);
     }
 
