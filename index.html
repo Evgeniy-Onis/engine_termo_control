@@ -78,8 +78,21 @@
         const isTimed = document.getElementById('checkTime').checked;
         const isInt = document.getElementById('checkInt').checked;
         const btnSet = document.getElementById('mainBtn');
-        btnSet.disabled = (isTimed || isInt);
-        btnSet.style.opacity = (isTimed || isInt) ? "0.5" : "1";
+        
+        btnSet.disabled = false; // ВСЕГДА АКТИВНА
+        btnSet.style.opacity = "1";
+        btnSet.innerText = "УСТАНОВИТЬ И ВКЛ";
+    }
+    
+    // При нажатии кнопки принудительно сбрасываем галки
+    async function handleMainButton() {
+        document.getElementById('checkTime').checked = false;
+        document.getElementById('checkInt').checked = false;
+        updateUIState();
+        
+        const thr = document.getElementById('thrSlider').value;
+        await send(`T:${thr}`);
+        await sendConfig(); // Обновляем состояние на Мастере
     }
 
     async function toggleMode(mode) {
