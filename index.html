@@ -19,6 +19,7 @@
         .scheduler { border-top: 1px dashed #444; margin-top: 1.2rem; padding-top: 1rem; }
         .sched-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
         input[type="time"] { background: #333; color: white; border: 1px solid #444; padding: 5px; border-radius: 5px; width: 100px; text-align: center; }
+        input[type="checkbox"] { transform: scale(1.2); cursor: pointer; }
     </style>
 </head>
 <body>
@@ -36,15 +37,19 @@
             <span style="color:#ff9800; font-weight:bold;"><span id="thrVal">45</span>°C</span>
         </div>
         <input type="range" id="thrSlider" min="20" max="70" value="45" 
-               oninput="document.getElementById('thrVal').innerText = this.value" onchange="sendConfig()">
+               onpointerdown="isEditingSlider = true"
+               onpointerup="isEditingSlider = false; sendConfig()"
+               oninput="document.getElementById('thrVal').innerText = this.value">
         
-        <button class="btn btn-set" onclick="handleMainButton()">УСТАНОВИТЬ И ВКЛ</button>
-        <button class="btn btn-off" onclick="send('OFF')">ВЫКЛЮЧИТЬ ВСЁ</button>
+        <button id="mainBtn" class="btn btn-set" onclick="handleMainButton()">УСТАНОВИТЬ И ВКЛ</button>
+        <button class="btn btn-off" onclick="handleOff()">ВЫКЛЮЧИТЬ ВСЁ</button>
 
         <div class="scheduler">
             <div class="sched-row">
                 <label id="timeLabel">Время / Интервал:</label>
-                <input type="time" id="schedTime" value="07:00">
+                <input type="time" id="schedTime" value="07:00" 
+                       onfocus="isEditingTime = true" 
+                       onblur="isEditingTime = false; sendConfig()">
             </div>
             <div class="sched-row">
                 <label><input type="checkbox" id="checkTime" onchange="toggleMode('time')"> Таймер</label>
@@ -60,11 +65,8 @@
     const UUID_DATA = '11111111-2222-3333-4444-555555555555';
 
     let cmdChar, isSending = false, queue = [];
-    let isEditing = false;
-
-    const timeInput = document.getElementById('schedTime');
-    timeInput.onfocus = () => { isEditing = true; };
-    timeInput.onblur = () => { isEditing = false; sendConfig(); };
+    let isEditingSlider = false;
+    let isEditingTime = false;
 
     async function send(msg) {
         queue.push(msg);
@@ -73,26 +75,49 @@
         while (queue.length > 0) {
             let m = queue.shift();
             try {
-                if (cmdChar) await cmdChar.writeValue(new TextEncoder().encode(m));
+                if (cmdChar) {
+                    await cmdChar.writeValue(new TextEncoder().encode(m));
+                    console.log("BLE Sent:", m);
+                }
                 await new Promise(r => setTimeout(r, 200));
-            } catch (e) { console.error(e); }
+            } catch (e) { console.error("BLE Error:", e); }
         }
         isSending = false;
     }
 
+    function toggleMode(mode) {
+        const cTime = document.getElementById('checkTime');
+        const cInt = document.getElementById('checkInt');
+        const btn = document.getElementById('mainBtn');
+
+        if (mode === 'time' && cTime.checked) cInt.checked = false;
+        if (mode === 'int' && cInt.checked) cTime.checked = false;
+
+        // Меняем внешний вид кнопки
+        if (cTime.checked) {
+            btn.innerText = "ЗАПУСТИТЬ ТАЙМЕР";
+            btn.style.background = "#ff9800";
+        } else if (cInt.checked) {
+            btn.innerText = "ЗАПУСТИТЬ ИНТЕРВАЛ";
+            btn.style.background = "#9c27b0";
+        } else {
+            btn.innerText = "УСТАНОВИТЬ И ВКЛ";
+            btn.style.background = "#2196f3";
+        }
+        sendConfig();
+    }
+
     async function handleMainButton() {
-        document.getElementById('checkTime').checked = false;
-        document.getElementById('checkInt').checked = false;
-        await sendConfig();
+        // Сначала отправляем конфигурацию режимов, затем команду на включение
+        sendConfig();
         await send("ON");
     }
 
-    function toggleMode(mode) {
-        if (mode === 'time' && document.getElementById('checkTime').checked) 
-            document.getElementById('checkInt').checked = false;
-        if (mode === 'int' && document.getElementById('checkInt').checked) 
-            document.getElementById('checkTime').checked = false;
-        sendConfig();
+    async function handleOff() {
+        document.getElementById('checkTime').checked = false;
+        document.getElementById('checkInt').checked = false;
+        toggleMode('none');
+        await send("OFF");
     }
 
     function sendConfig() {
@@ -101,9 +126,8 @@
         const uSched = document.getElementById('checkTime').checked ? 1 : 0;
         const uInt = document.getElementById('checkInt').checked ? 1 : 0;
         
-        // Формируем строку из 4 параметров
-        const payload = `CFG:${thr},${timeVal},${uSched},${uInt}`;
-        send(payload);
+        // Отправляем 4 параметра в Master
+        send(`CFG:${thr},${timeVal},${uSched},${uInt}`);
     }
 
     async function connect() {
@@ -116,25 +140,43 @@
 
             await dChar.startNotifications();
             dChar.addEventListener('characteristicvaluechanged', (e) => {
-                const p = new TextDecoder().decode(e.target.value).split('|');
-                if (p.length >= 6) {
+                const str = new TextDecoder().decode(e.target.value);
+                const p = str.split('|');
+                if (p.length >= 7) {
+                    // 0:Temp, 1:Relay, 2:Lock, 3:Thr, 4:Time, 5:USched, 6:UInt
                     document.getElementById('temp').innerText = p[0] + "°C";
-                    document.getElementById('relay').innerText = p[1];
-                    document.getElementById('relay').style.color = (p[1] === "ON") ? "#4caf50" : "#f44336";
+                    const relayEl = document.getElementById('relay');
+                    relayEl.innerText = p[1];
+                    relayEl.style.color = (p[1] === "ON") ? "#4caf50" : "#f44336";
                     
-                    if (!isEditing) {
+                    if (!isEditingSlider) {
                         document.getElementById('thrSlider').value = p[3];
                         document.getElementById('thrVal').innerText = p[3];
+                    }
+                    if (!isEditingTime) {
                         document.getElementById('schedTime').value = p[4];
                         document.getElementById('checkTime').checked = (p[5] === "1");
                         document.getElementById('checkInt').checked = (p[6] === "1");
+                        // Обновляем текст кнопки при получении состояния
+                        updateBtnText(p[5] === "1", p[6] === "1");
                     }
                 }
             });
+
             document.getElementById('status-line').innerText = "Статус: Подключено";
             document.getElementById('connectBtn').style.display = "none";
-            send(`TIME:${new Date().getHours()},${new Date().getMinutes()}`);
-        } catch (err) { alert(err); }
+            
+            // Синхронизация времени с телефоном
+            const now = new Date();
+            send(`TIME:${now.getHours()},${now.getMinutes()}`);
+        } catch (err) { alert("Ошибка: " + err); }
+    }
+
+    function updateBtnText(s, i) {
+        const btn = document.getElementById('mainBtn');
+        if (s) { btn.innerText = "ЗАПУСТИТЬ ТАЙМЕР"; btn.style.background = "#ff9800"; }
+        else if (i) { btn.innerText = "ЗАПУСТИТЬ ИНТЕРВАЛ"; btn.style.background = "#9c27b0"; }
+        else { btn.innerText = "УСТАНОВИТЬ И ВКЛ"; btn.style.background = "#2196f3"; }
     }
 </script>
 </body>
