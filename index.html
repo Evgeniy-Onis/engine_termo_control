@@ -100,8 +100,10 @@
         const timeVal = document.getElementById('schedTime').value;
         const uSched = document.getElementById('checkTime').checked ? 1 : 0;
         const uInt = document.getElementById('checkInt').checked ? 1 : 0;
-        // Отправляем время в любом случае, Master сам решит как его юзать
-        send(`CFG:${thr},${timeVal},${uSched},${uInt}`);
+        
+        // Формируем строку из 4 параметров
+        const payload = `CFG:${thr},${timeVal},${uSched},${uInt}`;
+        send(payload);
     }
 
     async function connect() {
