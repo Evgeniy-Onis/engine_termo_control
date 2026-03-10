@@ -18,7 +18,7 @@
         input[type="range"] { width: 100%; margin: 15px 0; cursor: pointer; }
         .scheduler { border-top: 1px dashed #444; margin-top: 1.2rem; padding-top: 1rem; }
         .sched-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
-        input[type="time"], input[type="number"] { background: #333; color: white; border: 1px solid #444; padding: 5px; border-radius: 5px; }
+        input[type="time"] { background: #333; color: white; border: 1px solid #444; padding: 5px; border-radius: 5px; width: 100px; text-align: center; }
     </style>
 </head>
 <body>
@@ -38,20 +38,17 @@
         <input type="range" id="thrSlider" min="20" max="70" value="45" 
                oninput="document.getElementById('thrVal').innerText = this.value" onchange="sendConfig()">
         
-        <button id="mainBtn" class="btn btn-set" onclick="handleMainButton()">УСТАНОВИТЬ И ВКЛ</button>
+        <button class="btn btn-set" onclick="handleMainButton()">УСТАНОВИТЬ И ВКЛ</button>
         <button class="btn btn-off" onclick="send('OFF')">ВЫКЛЮЧИТЬ ВСЁ</button>
 
         <div class="scheduler">
             <div class="sched-row">
-                <label>Время запуска:</label>
+                <label id="timeLabel">Время / Интервал:</label>
                 <input type="time" id="schedTime" value="07:00">
             </div>
             <div class="sched-row">
-                <label><input type="checkbox" id="checkTime" onchange="toggleMode('time')"> По времени</label>
-                <div style="display: flex; align-items: center;">
-                    <label style="margin-right: 5px;"><input type="checkbox" id="checkInt" onchange="toggleMode('int')"> Интервал:</label>
-                    <input type="number" id="intVal" value="2" min="1" max="24" style="width: 40px;">
-                </div>
+                <label><input type="checkbox" id="checkTime" onchange="toggleMode('time')"> Таймер</label>
+                <label><input type="checkbox" id="checkInt" onchange="toggleMode('int')"> Интервалы</label>
             </div>
         </div>
     </div>
@@ -65,25 +62,20 @@
     let cmdChar, isSending = false, queue = [];
     let isEditing = false;
 
-    // Обработчики фокуса, чтобы не сбивать ввод пользователя при получении данных
-    document.getElementById('schedTime').onfocus = () => isEditing = true;
-    document.getElementById('schedTime').onblur = () => { isEditing = false; sendConfig(); };
-    document.getElementById('intVal').onfocus = () => isEditing = true;
-    document.getElementById('intVal').onblur = () => { isEditing = false; sendConfig(); };
+    const timeInput = document.getElementById('schedTime');
+    timeInput.onfocus = () => { isEditing = true; };
+    timeInput.onblur = () => { isEditing = false; sendConfig(); };
 
     async function send(msg) {
         queue.push(msg);
         if (isSending) return;
         isSending = true;
         while (queue.length > 0) {
-            let currentMsg = queue.shift();
+            let m = queue.shift();
             try {
-                if (cmdChar) {
-                    await cmdChar.writeValue(new TextEncoder().encode(currentMsg));
-                    console.log("Отправлено:", currentMsg);
-                }
+                if (cmdChar) await cmdChar.writeValue(new TextEncoder().encode(m));
                 await new Promise(r => setTimeout(r, 200));
-            } catch (e) { console.error("Ошибка отправки:", e); }
+            } catch (e) { console.error(e); }
         }
         isSending = false;
     }
@@ -105,30 +97,28 @@
 
     function sendConfig() {
         const thr = document.getElementById('thrSlider').value;
-        const time = document.getElementById('schedTime').value;
+        const timeVal = document.getElementById('schedTime').value;
         const uSched = document.getElementById('checkTime').checked ? 1 : 0;
         const uInt = document.getElementById('checkInt').checked ? 1 : 0;
-        const iVal = document.getElementById('intVal').value;
-        send(`CFG:${thr},${time},${uSched},${uInt},${iVal}`);
+        // Отправляем время в любом случае, Master сам решит как его юзать
+        send(`CFG:${thr},${timeVal},${uSched},${uInt}`);
     }
 
     async function connect() {
         try {
-            const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [UUID_SERV] }] });
-            const server = await device.gatt.connect();
-            const service = await server.getPrimaryService(UUID_SERV);
-            cmdChar = await service.getCharacteristic(UUID_CMD);
-            const dataChar = await service.getCharacteristic(UUID_DATA);
+            const dev = await navigator.bluetooth.requestDevice({ filters: [{ services: [UUID_SERV] }] });
+            const gatt = await dev.gatt.connect();
+            const serv = await gatt.getPrimaryService(UUID_SERV);
+            cmdChar = await serv.getCharacteristic(UUID_CMD);
+            const dChar = await serv.getCharacteristic(UUID_DATA);
 
-            await dataChar.startNotifications();
-            dataChar.addEventListener('characteristicvaluechanged', (e) => {
-                const str = new TextDecoder().decode(e.target.value);
-                const p = str.split('|');
-                if (p.length >= 8) {
+            await dChar.startNotifications();
+            dChar.addEventListener('characteristicvaluechanged', (e) => {
+                const p = new TextDecoder().decode(e.target.value).split('|');
+                if (p.length >= 6) {
                     document.getElementById('temp').innerText = p[0] + "°C";
-                    const relayEl = document.getElementById('relay');
-                    relayEl.innerText = p[1];
-                    relayEl.style.color = (p[1] === "ON") ? "#4caf50" : "#f44336";
+                    document.getElementById('relay').innerText = p[1];
+                    document.getElementById('relay').style.color = (p[1] === "ON") ? "#4caf50" : "#f44336";
                     
                     if (!isEditing) {
                         document.getElementById('thrSlider').value = p[3];
@@ -136,15 +126,13 @@
                         document.getElementById('schedTime').value = p[4];
                         document.getElementById('checkTime').checked = (p[5] === "1");
                         document.getElementById('checkInt').checked = (p[6] === "1");
-                        document.getElementById('intVal').value = p[7];
                     }
                 }
             });
-
             document.getElementById('status-line').innerText = "Статус: Подключено";
             document.getElementById('connectBtn').style.display = "none";
             send(`TIME:${new Date().getHours()},${new Date().getMinutes()}`);
-        } catch (err) { alert("Ошибка Bluetooth: " + err); }
+        } catch (err) { alert(err); }
     }
 </script>
 </body>
