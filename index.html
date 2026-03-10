@@ -16,7 +16,6 @@
     </style>
 </head>
 <body>
-
 <div class="card">
     <div id="status-line" style="color:#888; font-size:0.8rem;">Отключено</div>
     <div class="temp-display" id="temp">--°C</div>
@@ -28,16 +27,15 @@
             <span>Порог: <b id="thrVal">45</b>°C</span>
         </div>
         <input type="range" id="thrSlider" min="20" max="70" value="45" 
-               onpointerdown="isUserBusy=true" 
-               onpointerup="isUserBusy=false; sendConfig()" 
-               oninput="document.getElementById('thrVal').innerText=this.value">
+               oninput="document.getElementById('thrVal').innerText=this.value"
+               onchange="sendConfig()">
         
         <button id="mainBtn" class="btn" style="background:#2196f3" onclick="handleMainButton()">УСТАНОВИТЬ И ВКЛ</button>
         <button class="btn" style="background:#f44336" onclick="handleOff()">ВЫКЛЮЧИТЬ ВСЁ</button>
 
         <div class="sched-row">
             <label>Время / Интервал:</label>
-            <input type="time" id="schedTime" value="07:00" onfocus="isUserBusy=true" onblur="isUserBusy=false; sendConfig()">
+            <input type="time" id="schedTime" value="07:00" onchange="sendConfig()">
         </div>
         <div class="sched-row">
             <label><input type="checkbox" id="checkTime" onchange="toggleMode('time')"> Таймер</label>
@@ -48,7 +46,7 @@
 
 <script>
     let cmdChar, queue = [], isSending = false;
-    let isUserBusy = false; // Ключевой флаг блокировки
+    let lastSentConfig = ""; 
 
     async function send(msg) {
         queue.push(msg);
@@ -58,48 +56,35 @@
             let m = queue.shift();
             try {
                 if (cmdChar) await cmdChar.writeValue(new TextEncoder().encode(m));
-                await new Promise(r => setTimeout(r, 200));
+                await new Promise(r => setTimeout(r, 150));
             } catch (e) {}
         }
         isSending = false;
     }
 
     function toggleMode(mode) {
-        isUserBusy = true; // Блокируем входящие данные немедленно
         const ct = document.getElementById('checkTime');
         const ci = document.getElementById('checkInt');
         if (mode === 'time' && ct.checked) ci.checked = false;
         if (mode === 'int' && ci.checked) ct.checked = false;
-        
-        refreshUI();
+        refreshBtn();
         sendConfig();
-        // Снимаем блок чуть позже, чтобы ESP успела ответить новым конфигом
-        setTimeout(() => { isUserBusy = false; }, 1000);
     }
 
-    function refreshUI() {
+    function refreshBtn() {
         const btn = document.getElementById('mainBtn');
-        const s = document.getElementById('checkTime').checked;
-        const i = document.getElementById('checkInt').checked;
+        const s = document.getElementById('checkTime').checked, i = document.getElementById('checkInt').checked;
         if (s) { btn.innerText="ЗАПУСТИТЬ ТАЙМЕР"; btn.style.background="#ff9800"; }
         else if (i) { btn.innerText="ЗАПУСТИТЬ ИНТЕРВАЛ"; btn.style.background="#9c27b0"; }
         else { btn.innerText="УСТАНОВИТЬ И ВКЛ"; btn.style.background="#2196f3"; }
     }
 
-    async function handleMainButton() {
-        isUserBusy = true;
-        sendConfig();
-        await send("ON");
-        setTimeout(() => { isUserBusy = false; }, 1000);
-    }
-
-    async function handleOff() {
-        isUserBusy = true;
+    function handleMainButton() { sendConfig(); send("ON"); }
+    function handleOff() { 
         document.getElementById('checkTime').checked = false;
         document.getElementById('checkInt').checked = false;
-        refreshUI();
-        await send("OFF");
-        setTimeout(() => { isUserBusy = false; }, 1000);
+        refreshBtn();
+        send("OFF"); 
     }
 
     function sendConfig() {
@@ -107,33 +92,45 @@
         const time = document.getElementById('schedTime').value;
         const us = document.getElementById('checkTime').checked ? 1 : 0;
         const ui = document.getElementById('checkInt').checked ? 1 : 0;
-        send(`CFG:${thr},${time},${us},${ui}`);
+        lastSentConfig = `${thr},${time},${us},${ui}`; // Запоминаем, что мы отправили
+        send(`CFG:${lastSentConfig}`);
     }
 
     async function connect() {
-        const dev = await navigator.bluetooth.requestDevice({filters: [{services: ['12345678-1234-5678-1234-567812345678']}]});
-        const gatt = await dev.gatt.connect();
-        const serv = await gatt.getPrimaryService('12345678-1234-5678-1234-567812345678');
-        cmdChar = await serv.getCharacteristic('87654321-4321-4321-4321-210987654321');
-        const dChar = await serv.getCharacteristic('11111111-2222-3333-4444-555555555555');
-        await dChar.startNotifications();
-        dChar.addEventListener('characteristicvaluechanged', (e) => {
-            if (isUserBusy) return; // ГЛАВНОЕ: Если пользователь что-то делает, не трогаем интерфейс!
-            const p = new TextDecoder().decode(e.target.value).split('|');
-            if (p.length >= 7) {
-                document.getElementById('temp').innerText = p[0] + "°C";
-                document.getElementById('relay').innerText = p[1];
-                document.getElementById('thrSlider').value = p[3];
-                document.getElementById('thrVal').innerText = p[3];
-                document.getElementById('schedTime').value = p[4];
-                document.getElementById('checkTime').checked = (p[5] === "1");
-                document.getElementById('checkInt').checked = (p[6] === "1");
-                refreshUI();
-            }
-        });
-        document.getElementById('status-line').innerText = "Подключено";
-        document.getElementById('connectBtn').style.display = "none";
-        send(`TIME:${new Date().getHours()},${new Date().getMinutes()}`);
+        try {
+            const dev = await navigator.bluetooth.requestDevice({filters: [{services: ['12345678-1234-5678-1234-567812345678']}]});
+            const gatt = await dev.gatt.connect();
+            const serv = await gatt.getPrimaryService('12345678-1234-5678-1234-567812345678');
+            cmdChar = await serv.getCharacteristic('87654321-4321-4321-4321-210987654321');
+            const dChar = await serv.getCharacteristic('11111111-2222-3333-4444-555555555555');
+            await dChar.startNotifications();
+            
+            dChar.addEventListener('characteristicvaluechanged', (e) => {
+                const p = new TextDecoder().decode(e.target.value).split('|');
+                if (p.length >= 7) {
+                    // ТЕМПЕРАТУРА И РЕЛЕ ОБНОВЛЯЮТСЯ ВСЕГДА
+                    document.getElementById('temp').innerText = p[0] + "°C";
+                    const r = document.getElementById('relay');
+                    r.innerText = p[1]; r.style.color = (p[1] === "ON") ? "#4caf50" : "#f44336";
+
+                    // КОНФИГ ОБНОВЛЯЕТСЯ ТОЛЬКО ЕСЛИ ОН СОВПАДАЕТ С ПОСЛЕДНИМ ОТПРАВЛЕННЫМ
+                    // (или если мы ничего не отправляли в этой сессии)
+                    const masterCfg = `${p[3]},${p[4]},${p[5]},${p[6]}`;
+                    if (lastSentConfig === "" || lastSentConfig === masterCfg) {
+                        document.getElementById('thrSlider').value = p[3];
+                        document.getElementById('thrVal').innerText = p[3];
+                        document.getElementById('schedTime').value = p[4];
+                        document.getElementById('checkTime').checked = (p[5] === "1");
+                        document.getElementById('checkInt').checked = (p[6] === "1");
+                        refreshBtn();
+                        lastSentConfig = masterCfg; // Синхронизируем
+                    }
+                }
+            });
+            document.getElementById('status-line').innerText = "Подключено";
+            document.getElementById('connectBtn').style.display = "none";
+            send(`TIME:${new Date().getHours()},${new Date().getMinutes()}`);
+        } catch (e) { alert(e); }
     }
 </script>
 </body>
