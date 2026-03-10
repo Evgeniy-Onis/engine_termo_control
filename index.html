@@ -108,21 +108,21 @@
             dChar.addEventListener('characteristicvaluechanged', (e) => {
                 const p = new TextDecoder().decode(e.target.value).split('|');
                 if (p.length >= 7) {
-                    // 1. ОБНОВЛЯЕМ ДИНАМИКУ ВСЕГДА
+                    // ТЕМПЕРАТУРА И РЕЛЕ - ОБНОВЛЯЕМ ВСЕГДА (нет условий)
                     document.getElementById('temp').innerText = p[0] + "°C";
                     const r = document.getElementById('relay');
                     r.innerText = p[1]; 
                     r.style.color = (p[1] === "ON") ? "#4caf50" : "#f44336";
             
-                    // 2. ОБНОВЛЯЕМ КОНФИГ ТОЛЬКО ЕСЛИ ПОЛЬЗОВАТЕЛЬ НЕ ТРОГАЕТ ИНТЕРФЕЙС
-                    // Убрали проверку lastSentConfig === masterCfg, добавили isUserBusy
+                    // НАСТРОЙКИ - ОБНОВЛЯЕМ ТОЛЬКО ЕСЛИ ЮЗЕР НЕ ТРОГАЕТ ИНТЕРФЕЙС
+                    // isUserBusy ставим true при onpointerdown (ползунок) и onfocus (время)
                     if (!isUserBusy) {
                         document.getElementById('thrSlider').value = p[3];
                         document.getElementById('thrVal').innerText = p[3];
                         document.getElementById('schedTime').value = p[4];
                         document.getElementById('checkTime').checked = (p[5] === "1");
                         document.getElementById('checkInt').checked = (p[6] === "1");
-                        refreshBtn();
+                        refreshBtn(); // Обновляем текст кнопки
                     }
                 }
             });
