@@ -6,13 +6,11 @@
     <title>Engine Termo Control</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: #1e1e1e; padding: 2rem; border-radius: 1.5rem; width: 100%; max-width: 380px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .card { background: #1e1e1e; padding: 2rem; border-radius: 1.5rem; width: 100%; max-width: 380px; text-align: center; }
         .temp-display { font-size: 4.5rem; font-weight: bold; color: #ff9800; margin: 0.5rem 0; }
-        .btn { width: 100%; padding: 1rem; margin: 0.5rem 0; border: none; border-radius: 0.8rem; font-size: 1rem; font-weight: bold; cursor: pointer; transition: 0.2s; color: white; }
-        .btn-set { background: #2196f3; }
-        .btn-off { background: #f44336; }
+        .btn { width: 100%; padding: 1rem; margin: 0.5rem 0; border: none; border-radius: 0.8rem; font-weight: bold; cursor: pointer; color: white; }
         .controls-box { background: #2a2a2a; padding: 1.2rem; border-radius: 1rem; margin-top: 1rem; text-align: left; }
-        input[type="range"] { width: 100%; margin: 15px 0; cursor: pointer; }
+        input[type="range"] { width: 100%; margin: 15px 0; }
         .sched-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; border-top: 1px solid #444; padding-top: 10px; }
         input[type="time"] { background: #333; color: white; border: 1px solid #444; padding: 5px; border-radius: 5px; }
     </style>
@@ -23,25 +21,23 @@
     <div id="status-line" style="color:#888; font-size:0.8rem;">Отключено</div>
     <div class="temp-display" id="temp">--°C</div>
     <div style="margin-bottom: 15px;">Реле: <span id="relay">---</span></div>
-
     <button id="connectBtn" class="btn" style="background:#4caf50" onclick="connect()">ПОДКЛЮЧИТЬСЯ</button>
 
     <div class="controls-box">
         <div style="display:flex; justify-content: space-between;">
-            <span>Порог:</span>
-            <span style="color:#ff9800; font-weight:bold;"><span id="thrVal">45</span>°C</span>
+            <span>Порог: <b id="thrVal">45</b>°C</span>
         </div>
         <input type="range" id="thrSlider" min="20" max="70" value="45" 
-               onpointerdown="startInteract()" 
-               onpointerup="stopInteract(); sendConfig()"
-               oninput="document.getElementById('thrVal').innerText = this.value">
+               onpointerdown="isUserBusy=true" 
+               onpointerup="isUserBusy=false; sendConfig()" 
+               oninput="document.getElementById('thrVal').innerText=this.value">
         
-        <button id="mainBtn" class="btn btn-set" onclick="handleMainButton()">УСТАНОВИТЬ И ВКЛ</button>
-        <button class="btn btn-off" onclick="handleOff()">ВЫКЛЮЧИТЬ ВСЁ</button>
+        <button id="mainBtn" class="btn" style="background:#2196f3" onclick="handleMainButton()">УСТАНОВИТЬ И ВКЛ</button>
+        <button class="btn" style="background:#f44336" onclick="handleOff()">ВЫКЛЮЧИТЬ ВСЁ</button>
 
         <div class="sched-row">
             <label>Время / Интервал:</label>
-            <input type="time" id="schedTime" value="07:00" onfocus="startInteract()" onblur="stopInteract(); sendConfig()">
+            <input type="time" id="schedTime" value="07:00" onfocus="isUserBusy=true" onblur="isUserBusy=false; sendConfig()">
         </div>
         <div class="sched-row">
             <label><input type="checkbox" id="checkTime" onchange="toggleMode('time')"> Таймер</label>
@@ -51,19 +47,8 @@
 </div>
 
 <script>
-    const UUID_SERV = '12345678-1234-5678-1234-567812345678';
-    const UUID_CMD  = '87654321-4321-4321-4321-210987654321';
-    const UUID_DATA = '11111111-2222-3333-4444-555555555555';
-
     let cmdChar, queue = [], isSending = false;
-    let userLock = false; // Флаг: пользователь что-то крутит
-    let lockTimer = null;
-
-    function startInteract() { userLock = true; if(lockTimer) clearTimeout(lockTimer); }
-    function stopInteract() { 
-        // Разблокируем обновление через 2 секунды после последнего действия
-        lockTimer = setTimeout(() => { userLock = false; }, 2000); 
-    }
+    let isUserBusy = false; // Ключевой флаг блокировки
 
     async function send(msg) {
         queue.push(msg);
@@ -80,82 +65,75 @@
     }
 
     function toggleMode(mode) {
-        startInteract();
-        const cTime = document.getElementById('checkTime');
-        const cInt = document.getElementById('checkInt');
-
-        if (mode === 'time' && cTime.checked) cInt.checked = false;
-        if (mode === 'int' && cInt.checked) cTime.checked = false;
-
-        refreshBtnText();
+        isUserBusy = true; // Блокируем входящие данные немедленно
+        const ct = document.getElementById('checkTime');
+        const ci = document.getElementById('checkInt');
+        if (mode === 'time' && ct.checked) ci.checked = false;
+        if (mode === 'int' && ci.checked) ct.checked = false;
+        
+        refreshUI();
         sendConfig();
-        stopInteract();
+        // Снимаем блок чуть позже, чтобы ESP успела ответить новым конфигом
+        setTimeout(() => { isUserBusy = false; }, 1000);
     }
 
-    function refreshBtnText() {
-        const cTime = document.getElementById('checkTime').checked;
-        const cInt = document.getElementById('checkInt').checked;
+    function refreshUI() {
         const btn = document.getElementById('mainBtn');
-
-        if (cTime) { btn.innerText = "ЗАПУСТИТЬ ТАЙМЕР"; btn.style.background = "#ff9800"; }
-        else if (cInt) { btn.innerText = "ЗАПУСТИТЬ ИНТЕРВАЛ"; btn.style.background = "#9c27b0"; }
-        else { btn.innerText = "УСТАНОВИТЬ И ВКЛ"; btn.style.background = "#2196f3"; }
+        const s = document.getElementById('checkTime').checked;
+        const i = document.getElementById('checkInt').checked;
+        if (s) { btn.innerText="ЗАПУСТИТЬ ТАЙМЕР"; btn.style.background="#ff9800"; }
+        else if (i) { btn.innerText="ЗАПУСТИТЬ ИНТЕРВАЛ"; btn.style.background="#9c27b0"; }
+        else { btn.innerText="УСТАНОВИТЬ И ВКЛ"; btn.style.background="#2196f3"; }
     }
 
     async function handleMainButton() {
-        startInteract();
+        isUserBusy = true;
         sendConfig();
         await send("ON");
-        stopInteract();
+        setTimeout(() => { isUserBusy = false; }, 1000);
     }
 
     async function handleOff() {
-        startInteract();
+        isUserBusy = true;
         document.getElementById('checkTime').checked = false;
         document.getElementById('checkInt').checked = false;
-        refreshBtnText();
+        refreshUI();
         await send("OFF");
-        stopInteract();
+        setTimeout(() => { isUserBusy = false; }, 1000);
     }
 
     function sendConfig() {
         const thr = document.getElementById('thrSlider').value;
         const time = document.getElementById('schedTime').value;
-        const uS = document.getElementById('checkTime').checked ? 1 : 0;
-        const uI = document.getElementById('checkInt').checked ? 1 : 0;
-        send(`CFG:${thr},${time},${uS},${uI}`);
+        const us = document.getElementById('checkTime').checked ? 1 : 0;
+        const ui = document.getElementById('checkInt').checked ? 1 : 0;
+        send(`CFG:${thr},${time},${us},${ui}`);
     }
 
     async function connect() {
-        try {
-            const dev = await navigator.bluetooth.requestDevice({ filters: [{ services: [UUID_SERV] }] });
-            const gatt = await dev.gatt.connect();
-            const serv = await gatt.getPrimaryService(UUID_SERV);
-            cmdChar = await serv.getCharacteristic(UUID_CMD);
-            const dChar = await serv.getCharacteristic(UUID_DATA);
-            await dChar.startNotifications();
-            
-            dChar.addEventListener('characteristicvaluechanged', (e) => {
-                if (userLock) return; // ИГНОРИРУЕМ данные от Master, пока пользователь крутит настройки
-
-                const p = new TextDecoder().decode(e.target.value).split('|');
-                if (p.length >= 7) {
-                    document.getElementById('temp').innerText = p[0] + "°C";
-                    const r = document.getElementById('relay');
-                    r.innerText = p[1]; r.style.color = (p[1] === "ON") ? "#4caf50" : "#f44336";
-                    
-                    document.getElementById('thrSlider').value = p[3];
-                    document.getElementById('thrVal').innerText = p[3];
-                    document.getElementById('schedTime').value = p[4];
-                    document.getElementById('checkTime').checked = (p[5] === "1");
-                    document.getElementById('checkInt').checked = (p[6] === "1");
-                    refreshBtnText();
-                }
-            });
-            document.getElementById('status-line').innerText = "Подключено";
-            document.getElementById('connectBtn').style.display = "none";
-            send(`TIME:${new Date().getHours()},${new Date().getMinutes()}`);
-        } catch (e) { alert(e); }
+        const dev = await navigator.bluetooth.requestDevice({filters: [{services: ['12345678-1234-5678-1234-567812345678']}]});
+        const gatt = await dev.gatt.connect();
+        const serv = await gatt.getPrimaryService('12345678-1234-5678-1234-567812345678');
+        cmdChar = await serv.getCharacteristic('87654321-4321-4321-4321-210987654321');
+        const dChar = await serv.getCharacteristic('11111111-2222-3333-4444-555555555555');
+        await dChar.startNotifications();
+        dChar.addEventListener('characteristicvaluechanged', (e) => {
+            if (isUserBusy) return; // ГЛАВНОЕ: Если пользователь что-то делает, не трогаем интерфейс!
+            const p = new TextDecoder().decode(e.target.value).split('|');
+            if (p.length >= 7) {
+                document.getElementById('temp').innerText = p[0] + "°C";
+                document.getElementById('relay').innerText = p[1];
+                document.getElementById('thrSlider').value = p[3];
+                document.getElementById('thrVal').innerText = p[3];
+                document.getElementById('schedTime').value = p[4];
+                document.getElementById('checkTime').checked = (p[5] === "1");
+                document.getElementById('checkInt').checked = (p[6] === "1");
+                refreshUI();
+            }
+        });
+        document.getElementById('status-line').innerText = "Подключено";
+        document.getElementById('connectBtn').style.display = "none";
+        send(`TIME:${new Date().getHours()},${new Date().getMinutes()}`);
     }
 </script>
 </body>
