@@ -108,22 +108,21 @@
             dChar.addEventListener('characteristicvaluechanged', (e) => {
                 const p = new TextDecoder().decode(e.target.value).split('|');
                 if (p.length >= 7) {
-                    // ТЕМПЕРАТУРА И РЕЛЕ ОБНОВЛЯЮТСЯ ВСЕГДА
+                    // 1. ОБНОВЛЯЕМ ДИНАМИКУ ВСЕГДА
                     document.getElementById('temp').innerText = p[0] + "°C";
                     const r = document.getElementById('relay');
-                    r.innerText = p[1]; r.style.color = (p[1] === "ON") ? "#4caf50" : "#f44336";
-
-                    // КОНФИГ ОБНОВЛЯЕТСЯ ТОЛЬКО ЕСЛИ ОН СОВПАДАЕТ С ПОСЛЕДНИМ ОТПРАВЛЕННЫМ
-                    // (или если мы ничего не отправляли в этой сессии)
-                    const masterCfg = `${p[3]},${p[4]},${p[5]},${p[6]}`;
-                    if (lastSentConfig === "" || lastSentConfig === masterCfg) {
+                    r.innerText = p[1]; 
+                    r.style.color = (p[1] === "ON") ? "#4caf50" : "#f44336";
+            
+                    // 2. ОБНОВЛЯЕМ КОНФИГ ТОЛЬКО ЕСЛИ ПОЛЬЗОВАТЕЛЬ НЕ ТРОГАЕТ ИНТЕРФЕЙС
+                    // Убрали проверку lastSentConfig === masterCfg, добавили isUserBusy
+                    if (!isUserBusy) {
                         document.getElementById('thrSlider').value = p[3];
                         document.getElementById('thrVal').innerText = p[3];
                         document.getElementById('schedTime').value = p[4];
                         document.getElementById('checkTime').checked = (p[5] === "1");
                         document.getElementById('checkInt').checked = (p[6] === "1");
                         refreshBtn();
-                        lastSentConfig = masterCfg; // Синхронизируем
                     }
                 }
             });
