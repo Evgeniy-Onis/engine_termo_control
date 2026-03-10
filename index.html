@@ -12,7 +12,7 @@
         .btn-set { background: #2196f3; }
         .btn-off { background: #f44336; }
         .controls-box { background: #2a2a2a; padding: 1.2rem; border-radius: 1rem; margin-top: 1rem; text-align: left; }
-        input[type="range"] { width: 100%; margin: 15px 0; }
+        input[type="range"] { width: 100%; margin: 15px 0; cursor: pointer; }
         .sched-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; border-top: 1px solid #444; padding-top: 10px; }
         input[type="time"] { background: #333; color: white; border: 1px solid #444; padding: 5px; border-radius: 5px; }
     </style>
@@ -32,8 +32,8 @@
             <span style="color:#ff9800; font-weight:bold;"><span id="thrVal">45</span>°C</span>
         </div>
         <input type="range" id="thrSlider" min="20" max="70" value="45" 
-               onpointerdown="isEditingSlider = true" 
-               onpointerup="isEditingSlider = false; sendConfig()"
+               onpointerdown="startInteract()" 
+               onpointerup="stopInteract(); sendConfig()"
                oninput="document.getElementById('thrVal').innerText = this.value">
         
         <button id="mainBtn" class="btn btn-set" onclick="handleMainButton()">УСТАНОВИТЬ И ВКЛ</button>
@@ -41,11 +41,11 @@
 
         <div class="sched-row">
             <label>Время / Интервал:</label>
-            <input type="time" id="schedTime" value="07:00" onfocus="isEditingTime = true" onblur="isEditingTime = false; sendConfig()">
+            <input type="time" id="schedTime" value="07:00" onfocus="startInteract()" onblur="stopInteract(); sendConfig()">
         </div>
         <div class="sched-row">
-            <label><input type="checkbox" id="checkTime" onchange="updateUI('time')"> Таймер</label>
-            <label><input type="checkbox" id="checkInt" onchange="updateUI('int')"> Интервалы</label>
+            <label><input type="checkbox" id="checkTime" onchange="toggleMode('time')"> Таймер</label>
+            <label><input type="checkbox" id="checkInt" onchange="toggleMode('int')"> Интервалы</label>
         </div>
     </div>
 </div>
@@ -56,7 +56,14 @@
     const UUID_DATA = '11111111-2222-3333-4444-555555555555';
 
     let cmdChar, queue = [], isSending = false;
-    let isEditingSlider = false, isEditingTime = false;
+    let userLock = false; // Флаг: пользователь что-то крутит
+    let lockTimer = null;
+
+    function startInteract() { userLock = true; if(lockTimer) clearTimeout(lockTimer); }
+    function stopInteract() { 
+        // Разблокируем обновление через 2 секунды после последнего действия
+        lockTimer = setTimeout(() => { userLock = false; }, 2000); 
+    }
 
     async function send(msg) {
         queue.push(msg);
@@ -67,35 +74,48 @@
             try {
                 if (cmdChar) await cmdChar.writeValue(new TextEncoder().encode(m));
                 await new Promise(r => setTimeout(r, 200));
-            } catch (e) { console.log(e); }
+            } catch (e) {}
         }
         isSending = false;
     }
 
-    function updateUI(mode) {
+    function toggleMode(mode) {
+        startInteract();
         const cTime = document.getElementById('checkTime');
         const cInt = document.getElementById('checkInt');
-        const btn = document.getElementById('mainBtn');
 
         if (mode === 'time' && cTime.checked) cInt.checked = false;
         if (mode === 'int' && cInt.checked) cTime.checked = false;
 
-        if (cTime.checked) { btn.innerText = "ЗАПУСТИТЬ ТАЙМЕР"; btn.style.background = "#ff9800"; }
-        else if (cInt.checked) { btn.innerText = "ЗАПУСТИТЬ ИНТЕРВАЛ"; btn.style.background = "#9c27b0"; }
-        else { btn.innerText = "УСТАНОВИТЬ И ВКЛ"; btn.style.background = "#2196f3"; }
+        refreshBtnText();
         sendConfig();
+        stopInteract();
+    }
+
+    function refreshBtnText() {
+        const cTime = document.getElementById('checkTime').checked;
+        const cInt = document.getElementById('checkInt').checked;
+        const btn = document.getElementById('mainBtn');
+
+        if (cTime) { btn.innerText = "ЗАПУСТИТЬ ТАЙМЕР"; btn.style.background = "#ff9800"; }
+        else if (cInt) { btn.innerText = "ЗАПУСТИТЬ ИНТЕРВАЛ"; btn.style.background = "#9c27b0"; }
+        else { btn.innerText = "УСТАНОВИТЬ И ВКЛ"; btn.style.background = "#2196f3"; }
     }
 
     async function handleMainButton() {
-        await sendConfig();
+        startInteract();
+        sendConfig();
         await send("ON");
+        stopInteract();
     }
 
     async function handleOff() {
+        startInteract();
         document.getElementById('checkTime').checked = false;
         document.getElementById('checkInt').checked = false;
-        updateUI('none');
+        refreshBtnText();
         await send("OFF");
+        stopInteract();
     }
 
     function sendConfig() {
@@ -114,21 +134,22 @@
             cmdChar = await serv.getCharacteristic(UUID_CMD);
             const dChar = await serv.getCharacteristic(UUID_DATA);
             await dChar.startNotifications();
+            
             dChar.addEventListener('characteristicvaluechanged', (e) => {
+                if (userLock) return; // ИГНОРИРУЕМ данные от Master, пока пользователь крутит настройки
+
                 const p = new TextDecoder().decode(e.target.value).split('|');
                 if (p.length >= 7) {
                     document.getElementById('temp').innerText = p[0] + "°C";
-                    document.getElementById('relay').innerText = p[1];
-                    if (!isEditingSlider) {
-                        document.getElementById('thrSlider').value = p[3];
-                        document.getElementById('thrVal').innerText = p[3];
-                    }
-                    if (!isEditingTime) {
-                        document.getElementById('schedTime').value = p[4];
-                        document.getElementById('checkTime').checked = (p[5] === "1");
-                        document.getElementById('checkInt').checked = (p[6] === "1");
-                        updateUI(); // Обновит текст кнопки на основе пришедших галок
-                    }
+                    const r = document.getElementById('relay');
+                    r.innerText = p[1]; r.style.color = (p[1] === "ON") ? "#4caf50" : "#f44336";
+                    
+                    document.getElementById('thrSlider').value = p[3];
+                    document.getElementById('thrVal').innerText = p[3];
+                    document.getElementById('schedTime').value = p[4];
+                    document.getElementById('checkTime').checked = (p[5] === "1");
+                    document.getElementById('checkInt').checked = (p[6] === "1");
+                    refreshBtnText();
                 }
             });
             document.getElementById('status-line').innerText = "Подключено";
