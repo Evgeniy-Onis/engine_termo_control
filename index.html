@@ -6,124 +6,131 @@
     <title>Engine Termo Control</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: #1e1e1e; padding: 2rem; border-radius: 1.5rem; width: 100%; max-width: 380px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .status-container { font-size: 0.9rem; margin-bottom: 1rem; color: #888; }
+        .card { background: #1e1e1e; padding: 2rem; border-radius: 1.5rem; width: 100%; max-width: 380px; text-align: center; }
         .temp-display { font-size: 4.5rem; font-weight: bold; color: #ff9800; margin: 0.5rem 0; }
-        .relay-info { font-size: 1.2rem; margin-bottom: 1.5rem; }
-        .btn { width: 100%; padding: 1rem; margin: 0.5rem 0; border: none; border-radius: 0.8rem; font-size: 1rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .btn-connect { background: #4caf50; color: white; }
-        .btn-set { background: #2196f3; color: white; }
-        .btn-off { background: #f44336; color: white; }
-        
+        .btn { width: 100%; padding: 1rem; margin: 0.5rem 0; border: none; border-radius: 0.8rem; font-weight: bold; cursor: pointer; color: white; transition: 0.2s; }
         .controls-box { background: #2a2a2a; padding: 1.2rem; border-radius: 1rem; margin-top: 1rem; text-align: left; }
-        input[type="range"] { width: 100%; margin: 15px 0; cursor: pointer; }
-        
-        .scheduler { border-top: 1px dashed #444; margin-top: 1.2rem; padding-top: 1rem; }
-        .sched-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
-        input[type="time"] { background: #333; color: white; border: 1px solid #444; padding: 5px; border-radius: 5px; }
+        input[type="range"] { width: 100%; margin: 15px 0; }
+        .sched-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; border-top: 1px solid #444; padding-top: 10px; }
+        input[type="time"] { background: #333; color: white; border: 1px solid #444; padding: 5px; border-radius: 5px; font-size: 1rem; }
+        input[type="checkbox"] { transform: scale(1.3); }
     </style>
 </head>
 <body>
-
 <div class="card">
-    <div class="status-container" id="status-line">Статус: Отключено</div>
+    <div id="status-line" style="color:#888; font-size:0.8rem; height: 1rem;">Отключено</div>
     <div class="temp-display" id="temp">--°C</div>
-    <div class="relay-info">Реле: <span id="relay">---</span></div>
-
-    <button id="connectBtn" class="btn btn-connect" onclick="connect()">ПОДКЛЮЧИТЬСЯ</button>
+    <div style="margin-bottom: 15px;">Реле: <span id="relay" style="font-weight:bold;">---</span></div>
+    <button id="connectBtn" class="btn" style="background:#4caf50" onclick="connect()">ПОДКЛЮЧИТЬСЯ</button>
 
     <div class="controls-box">
         <div style="display:flex; justify-content: space-between;">
-            <span>Порог:</span>
-            <span style="color:#ff9800; font-weight:bold;"><span id="thrVal">45</span>°C</span>
+            <span>Порог: <b id="thrVal">45</b>°C</span>
         </div>
         <input type="range" id="thrSlider" min="20" max="70" value="45" 
-               oninput="document.getElementById('thrVal').innerText = this.value">
+               oninput="document.getElementById('thrVal').innerText=this.value" onchange="sendCfg()">
         
-        <button class="btn btn-set" onclick="send('T:' + document.getElementById('thrSlider').value)">УСТАНОВИТЬ И ВКЛ</button>
-        <button class="btn btn-off" onclick="send('OFF')">ВЫКЛЮЧИТЬ</button>
+        <button id="mainBtn" class="btn" style="background:#2196f3" onclick="send('ON')">УСТАНОВИТЬ И ВКЛ</button>
+        <button class="btn" style="background:#f44336" onclick="handleReset()">ВЫКЛЮЧИТЬ ВСЁ</button>
 
-        <div class="scheduler">
-            <div class="sched-row">
-                <label>Время:</label>
-                <input type="time" id="schedTime" value="07:00">
-            </div>
-            <div class="sched-row">
-                <label><input type="checkbox" id="checkTime"> По времени</label>
-                <label><input type="checkbox" id="checkInt"> Интервалы</label>
-            </div>
+        <div class="sched-row">
+            <label id="timeLabel">Время / Пауза:</label>
+            <input type="time" id="schedTime" value="00:10" onchange="sendCfg()">
+        </div>
+        <div class="sched-row">
+            <label><input type="checkbox" id="checkTime" onchange="toggleMode('time')"> Таймер</label>
+            <label><input type="checkbox" id="checkInt" onchange="toggleMode('int')"> Интервалы</label>
         </div>
     </div>
 </div>
 
 <script>
-    const UUID_SERV = '12345678-1234-5678-1234-567812345678';
-    const UUID_CMD  = '87654321-4321-4321-4321-210987654321';
-    const UUID_DATA = '11111111-2222-3333-4444-555555555555';
+    let cmdChar;
 
-    let device, cmdChar;
+    // Взаимное исключение чекбоксов и смена текста кнопки
+    function toggleMode(m) {
+        const ct = document.getElementById('checkTime');
+        const ci = document.getElementById('checkInt');
+        if(m==='time' && ct.checked) ci.checked = false;
+        if(m==='int' && ci.checked) ct.checked = false;
+        refreshUI();
+        sendCfg();
+    }
+
+    function refreshUI() {
+        const btn = document.getElementById('mainBtn');
+        const isT = document.getElementById('checkTime').checked;
+        const isI = document.getElementById('checkInt').checked;
+        
+        if(isT) {
+            btn.innerText = "ЗАПУСК ПО ТАЙМЕРУ";
+            btn.style.background = "#ff9800";
+        } else if(isI) {
+            btn.innerText = "ЗАПУСТИТЬ С ИНТЕРВАЛОМ";
+            btn.style.background = "#9c27b0";
+        } else {
+            btn.innerText = "УСТАНОВИТЬ И ВКЛ";
+            btn.style.background = "#2196f3";
+        }
+    }
+
+    // Сброс всего
+    function handleReset() {
+        document.getElementById('checkTime').checked = false;
+        document.getElementById('checkInt').checked = false;
+        refreshUI();
+        send("OFF");
+    }
+
+    function sendCfg() {
+        if(!cmdChar) return;
+        const msg = `CFG:${document.getElementById('thrSlider').value},${document.getElementById('schedTime').value},${document.getElementById('checkTime').checked?1:0},${document.getElementById('checkInt').checked?1:0}`;
+        send(msg);
+    }
+
+    async function send(m) { if(cmdChar) await cmdChar.writeValue(new TextEncoder().encode(m)); }
 
     async function connect() {
         try {
-            // Улучшенный фильтр: ищем по UUID сервиса, это надежнее чем по имени
-            device = await navigator.bluetooth.requestDevice({
-                filters: [
-                    { services: [UUID_SERV] },
-                    { namePrefix: 'Termo' }
-                ]
-            });
-
-            const server = await device.gatt.connect();
-            const service = await server.getPrimaryService(UUID_SERV);
-            cmdChar = await service.getCharacteristic(UUID_CMD);
-            const dataChar = await service.getCharacteristic(UUID_DATA);
-
-            await dataChar.startNotifications();
-            dataChar.addEventListener('characteristicvaluechanged', (e) => {
-                const str = new TextDecoder().decode(e.target.value);
-                const parts = str.split('|');
-                
-                // Проверяем, что пришло именно 3 части (темп, реле, замок)
-                if (parts.length === 3) {
-                    const [t, r, lock] = parts;
-                    
-                    // 1. Обновляем температуру
-                    document.getElementById('temp').innerText = t + "°C";
-                    
-                    // 2. Обновляем статус реле
-                    const relayEl = document.getElementById('relay');
-                    relayEl.innerText = r;
-                    relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
+            const dev = await navigator.bluetooth.requestDevice({filters: [{services: ['12345678-1234-5678-1234-567812345678']}]});
+            const gatt = await dev.gatt.connect();
+            const serv = await gatt.getPrimaryService('12345678-1234-5678-1234-567812345678');
+            cmdChar = await serv.getCharacteristic('87654321-4321-4321-4321-210987654321');
+            const dChar = await serv.getCharacteristic('11111111-2222-3333-4444-555555555555');
             
-                    // 3. Обновляем статусную строку (самая верхняя надпись)
+            await dChar.startNotifications();
+            dChar.addEventListener('characteristicvaluechanged', (e) => {
+                const p = new TextDecoder().decode(e.target.value).split('|');
+                if (p.length >= 7) {
+                    // Обновляем динамику всегда
+                    document.getElementById('temp').innerText = p[0] + "°C";
+                    const relayEl = document.getElementById('relay');
+                    relayEl.innerText = p[1];
+                    relayEl.style.color = (p[1] === "ON") ? "#4caf50" : "#f44336";
+                    
                     const stLine = document.getElementById('status-line');
-                    if (lock === "L") {
-                        stLine.innerHTML = "Статус: <span style='color:#ff9800; font-weight:bold;'>ГИСТЕРЕЗИС (-5°C)</span>";
-                    } else {
-                        stLine.innerHTML = "Статус: <span style='color:#4caf50;'>В сети</span>";
+                    stLine.innerText = (p[2] === "L") ? "ОЖИДАНИЕ ОСТЫВАНИЯ" : "В СЕТИ";
+                    stLine.style.color = (p[2] === "L") ? "#ff9800" : "#4caf50";
+
+                    // Обновляем настройки только если поля не в фокусе
+                    if (document.activeElement.tagName !== "INPUT") {
+                        document.getElementById('thrSlider').value = p[3];
+                        document.getElementById('thrVal').innerText = p[3];
+                        document.getElementById('schedTime').value = p[4];
+                        document.getElementById('checkTime').checked = (p[5] === "1");
+                        document.getElementById('checkInt').checked = (p[6] === "1");
+                        refreshUI();
                     }
                 }
             });
 
-            // Синхронизация времени
-            const now = new Date();
-            await send(`TIME:${now.getHours()},${now.getMinutes()}`);
-
+            const n = new Date();
+            await send(`TIME:${n.getHours()},${n.getMinutes()}`);
             document.getElementById('connectBtn').innerText = "ПОДКЛЮЧЕНО";
             document.getElementById('connectBtn').style.background = "#333";
-        } catch (err) { 
-            console.error(err);
-            alert("Не удалось найти устройство. Убедитесь, что Master включен и Bluetooth активен."); 
-        }
-    }
-
-    async function send(msg) {
-        if (!cmdChar) return;
-        try {
-            await cmdChar.writeValue(new TextEncoder().encode(msg));
-        } catch (e) { console.error("Ошибка отправки:", e); }
+            document.getElementById('connectBtn').disabled = true;
+        } catch(err) { console.log(err); }
     }
 </script>
-
 </body>
 </html>
