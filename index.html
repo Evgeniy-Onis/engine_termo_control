@@ -118,56 +118,69 @@
 
     // --- СТАРЫЕ ФУНКЦИИ СВЯЗИ ---
     async function connect() {
-        try {
-            device = await navigator.bluetooth.requestDevice({
-                filters: [
-                    { services: [UUID_SERV] },
-                    { namePrefix: 'Termo' }
-                ]
-            });
-
-            const server = await device.gatt.connect();
-            const service = await server.getPrimaryService(UUID_SERV);
-            cmdChar = await service.getCharacteristic(UUID_CMD);
-            const dataChar = await service.getCharacteristic(UUID_DATA);
-
-            await dataChar.startNotifications();
-            dataChar.addEventListener('characteristicvaluechanged', (e) => {
-                const str = new TextDecoder().decode(e.target.value);
-                const parts = str.split('|');
-                
-                if (parts.length === 3) {
-                    const [t, r, lock] = parts;
+            try {
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { services: [UUID_SERV] },
+                        { namePrefix: 'Termo' }
+                    ]
+                });
+    
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(UUID_SERV);
+                cmdChar = await service.getCharacteristic(UUID_CMD);
+                const dataChar = await service.getCharacteristic(UUID_DATA);
+    
+                await dataChar.startNotifications();
+                dataChar.addEventListener('characteristicvaluechanged', (e) => {
+                    // Читаем ответ, вычищаем возможные нулевые байты (\0) и пробелы
+                    const str = new TextDecoder().decode(e.target.value).replace(/\0/g, '').trim();
+                    const parts = str.split('|');
                     
-                    document.getElementById('temp').innerText = t + "°C";
-                    
-                    const relayEl = document.getElementById('relay');
-                    relayEl.innerText = r;
-                    relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
-            
-                    const stLine = document.getElementById('status-line');
-                    if (lock === "L") {
-                        stLine.innerHTML = "Статус: <span style='color:#ff9800; font-weight:bold;'>ГИСТЕРЕЗИС (-5°C)</span>";
-                    } else {
-                        stLine.innerHTML = "Статус: <span style='color:#4caf50;'>В сети</span>";
+                    // Температура ВСЕГДА идет первой. Выводим её безоговорочно:
+                    if (parts[0]) {
+                        document.getElementById('temp').innerText = parts[0] + "°C";
                     }
-                }
-            });
-
-            const now = new Date();
-            await send(`TIME:${now.getHours()},${now.getMinutes()}`);
-
-            document.getElementById('connectBtn').innerText = "ПОДКЛЮЧЕНО";
-            document.getElementById('connectBtn').style.background = "#333";
-            
-            // Обновляем текст кнопки сразу после подключения
-            refreshUI();
-        } catch (err) { 
-            console.error(err);
-            alert("Не удалось найти устройство. Убедитесь, что Master включен и Bluetooth активен."); 
+                    
+                    // Если пришел полный новый пакет (temp | relay | lock) - обновляем остальное
+                    if (parts.length >= 3) {
+                        const r = parts[1];
+                        const lock = parts[2];
+                        
+                        const relayEl = document.getElementById('relay');
+                        if (relayEl) {
+                            relayEl.innerText = r;
+                            relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
+                        }
+                
+                        const stLine = document.getElementById('status-line');
+                        if (stLine) {
+                            if (lock === "L") {
+                                stLine.innerHTML = "Статус: <span style='color:#ff9800; font-weight:bold;'>ГИСТЕРЕЗИС (-5°C)</span>";
+                            } else {
+                                stLine.innerHTML = "Статус: <span style='color:#4caf50;'>В сети</span>";
+                            }
+                        }
+                    }
+                });
+    
+                // Синхронизация времени при подключении
+                const now = new Date();
+                await send(`TIME:${now.getHours()},${now.getMinutes()}`);
+    
+                document.getElementById('connectBtn').innerText = "ПОДКЛЮЧЕНО";
+                document.getElementById('connectBtn').style.background = "#333";
+                
+                // Если добавлена функция обновления кнопок таймера - дергаем её
+                if (typeof refreshUI === 'function') refreshUI();
+                
+            } catch (err) { 
+                console.error(err);
+                alert("Не удалось найти устройство. Убедитесь, что Master включен и Bluetooth активен."); 
+            }
         }
-    }
 
+        
     async function send(msg) {
         if (!cmdChar) return;
         try {
