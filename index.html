@@ -7,90 +7,76 @@
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
         .card { background: #1e1e1e; padding: 2rem; border-radius: 1.5rem; width: 100%; max-width: 380px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .status-line { font-size: 0.9rem; margin-bottom: 1rem; color: #888; min-height: 1.2em; }
+        .status-container { font-size: 0.9rem; margin-bottom: 1rem; color: #888; }
         .temp-display { font-size: 4.5rem; font-weight: bold; color: #ff9800; margin: 0.5rem 0; }
-        .relay-info { font-size: 1.2rem; margin-bottom: 1.5rem; font-weight: 500; }
+        .relay-info { font-size: 1.2rem; margin-bottom: 1.5rem; }
+        .btn { width: 100%; padding: 1rem; margin: 0.5rem 0; border: none; border-radius: 0.8rem; font-size: 1rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-connect { background: #4caf50; color: white; }
+        .btn-set { background: #2196f3; color: white; }
+        .btn-off { background: #f44336; color: white; }
         
-        .control-group { background: #2b2b2b; padding: 1rem; border-radius: 1rem; margin-bottom: 1rem; text-align: left; }
-        .label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .controls-box { background: #2a2a2a; padding: 1.2rem; border-radius: 1rem; margin-top: 1rem; text-align: left; }
+        input[type="range"] { width: 100%; margin: 15px 0; cursor: pointer; }
         
-        input[type="range"] { width: 100%; accent-color: #ff9800; }
-        input[type="time"] { background: #333; border: 1px solid #444; color: white; padding: 5px; border-radius: 5px; cursor: pointer; }
-        
-        .btn { width: 100%; padding: 1.2rem; margin: 0.5rem 0; border: none; border-radius: 0.8rem; font-size: 1rem; font-weight: bold; cursor: pointer; transition: 0.3s; color: white; }
-        .btn-reset { background: #333; color: #ff5252; margin-top: 1rem; border: 1px solid #444; }
-        .btn-reset:hover { background: #444; }
-
-        /* Переключатели */
-        .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #444; transition: .4s; border-radius: 20px; }
-        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
-        input:checked + .slider { background-color: #4caf50; }
-        input:checked + .slider:before { transform: translateX(20px); }
+        .scheduler { border-top: 1px dashed #444; margin-top: 1.2rem; padding-top: 1rem; }
+        .sched-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+        input[type="time"] { background: #333; color: white; border: 1px solid #444; padding: 5px; border-radius: 5px; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <div id="status-line" class="status-line">Нажмите «ПОДКЛЮЧИТЬСЯ»</div>
-    
-    <div class="temp-display"><span id="temp">--</span>°</div>
-    <div class="relay-info">Реле: <span id="relay" style="color:#666">OFF</span></div>
+    <div class="status-container" id="status-line">Статус: Отключено</div>
+    <div class="temp-display" id="temp">--°C</div>
+    <div class="relay-info">Реле: <span id="relay">---</span></div>
 
-    <div class="control-group">
-        <div class="label-row">
-            <span>Порог нагрева</span>
-            <b id="thrVal">45°C</b>
+    <button id="connectBtn" class="btn btn-connect" onclick="connect()">ПОДКЛЮЧИТЬСЯ</button>
+
+    <div class="controls-box">
+        <div style="display:flex; justify-content: space-between;">
+            <span>Порог:</span>
+            <span style="color:#ff9800; font-weight:bold;"><span id="thrVal">45</span>°C</span>
         </div>
-        <input type="range" id="thrSlider" min="20" max="85" value="45" oninput="document.getElementById('thrVal').innerText=this.value+'°C'">
+        <input type="range" id="thrSlider" min="20" max="70" value="45" 
+               oninput="document.getElementById('thrVal').innerText = this.value">
+        
+        <button id="mainBtn" class="btn btn-set" onclick="handleMainAction()">УСТАНОВИТЬ И ВКЛ</button>
+        <button class="btn btn-off" onclick="send('OFF')">ВЫКЛЮЧИТЬ</button>
+
+        <div class="scheduler">
+            <div class="sched-row">
+                <label>Время:</label>
+                <input type="time" id="schedTime" value="07:00">
+            </div>
+            <div class="sched-row">
+                <label><input type="checkbox" id="checkTime" onchange="toggleMode('time')"> По времени</label>
+                <label><input type="checkbox" id="checkInt" onchange="toggleMode('int')"> Интервалы</label>
+            </div>
+        </div>
     </div>
-
-    <div class="control-group">
-        <div class="label-row">
-            <span>Запуск по времени</span>
-            <label class="switch">
-                <input type="checkbox" id="checkTime" onchange="toggleMode('time')">
-                <span class="slider"></span>
-            </label>
-        </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top:10px;">
-            <span>Время старта:</span>
-            <input type="time" id="schedTime" value="07:00">
-        </div>
-    </div>
-
-    <div class="control-group">
-        <div class="label-row">
-            <span>Циклический интервал</span>
-            <label class="switch">
-                <input type="checkbox" id="checkInt" onchange="toggleMode('int')">
-                <span class="slider"></span>
-            </label>
-        </div>
-        <div style="color: #888; font-size: 0.8rem;">(Вкл. через указанное время после догрева)</div>
-    </div>
-
-    <button id="mainBtn" class="btn" style="background:#2196f3" onclick="handleMainAction()">ПОДКЛЮЧИТЬСЯ</button>
-    <button class="btn btn-reset" onclick="handleReset()">СБРОСИТЬ ВСЁ</button>
 </div>
 
 <script>
-    let device, cmdChar, dataChar;
+    const UUID_SERV = '12345678-1234-5678-1234-567812345678';
+    const UUID_CMD  = '87654321-4321-4321-4321-210987654321';
+    const UUID_DATA = '11111111-2222-3333-4444-555555555555';
 
-    // Взаимоисключающие чекбоксы
+    let device, cmdChar;
+
+    // --- НОВАЯ ЛОГИКА ИНТЕРФЕЙСА ---
     function toggleMode(mode) {
-        if (mode === 'time' && document.getElementById('checkTime').checked) {
-            document.getElementById('checkInt').checked = false;
-        } else if (mode === 'int' && document.getElementById('checkInt').checked) {
-            document.getElementById('checkTime').checked = false;
-        }
+        const isT = document.getElementById('checkTime');
+        const isI = document.getElementById('checkInt');
+
+        // Запрещаем выбирать оба режима сразу
+        if (mode === 'time' && isT.checked) isI.checked = false;
+        if (mode === 'int' && isI.checked) isT.checked = false;
+
         refreshUI();
     }
 
-    // Обновление внешнего вида кнопки в зависимости от логики
     function refreshUI() {
-        if (!cmdChar) return; // Если еще не подключены, не меняем текст
+        if (!cmdChar) return; // Не меняем цвет кнопки, пока не подключились
         
         const isT = document.getElementById('checkTime').checked;
         const isI = document.getElementById('checkInt').checked;
@@ -103,97 +89,82 @@
             btn.innerText = "ЗАПУСТИТЬ ИНТЕРВАЛ";
             btn.style.background = "#009688";
         } else {
-            btn.innerText = "ВКЛЮЧИТЬ (РУЧНОЙ)";
+            btn.innerText = "УСТАНОВИТЬ И ВКЛ";
             btn.style.background = "#2196f3";
         }
     }
 
-    // Главное действие кнопки
     async function handleMainAction() {
         if (!cmdChar) {
-            await connect();
+            alert("Сначала подключитесь к устройству!");
             return;
         }
 
         const isT = document.getElementById('checkTime').checked;
         const isI = document.getElementById('checkInt').checked;
-        
+
         if (isT || isI) {
-            // Если выбран режим - шлем конфиг (Мастер сам перейдет в OFF и начнет ждать)
-            sendCfg();
+            // Если выбран режим планировщика - шлем команду CFG
+            const thr = document.getElementById('thrSlider').value;
+            const time = document.getElementById('schedTime').value;
+            const useT = isT ? 1 : 0;
+            const useI = isI ? 1 : 0;
+            await send(`CFG:${thr},${time},${useT},${useI}`);
         } else {
-            // Если режимы не выбраны - обычный пуск реле
-            send("ON");
+            // Если галочки сняты - обычный ручной пуск
+            await send('T:' + document.getElementById('thrSlider').value);
         }
     }
 
-    function sendCfg() {
-        const thr = document.getElementById('thrSlider').value;
-        const time = document.getElementById('schedTime').value;
-        const useT = document.getElementById('checkTime').checked ? 1 : 0;
-        const useI = document.getElementById('checkInt').checked ? 1 : 0;
-        
-        // Формат: CFG:Порог,Время,ФлагТаймера,ФлагИнтервала
-        send(`CFG:${thr},${time},${useT},${useI}`);
-    }
-
-    function handleReset() {
-        document.getElementById('checkTime').checked = false;
-        document.getElementById('checkInt').checked = false;
-        refreshUI();
-        send("OFF");
-        // Небольшая задержка, чтобы OFF прошел первым
-        setTimeout(sendCfg, 200);
-    }
-
+    // --- СТАРЫЕ ФУНКЦИИ СВЯЗИ ---
     async function connect() {
         try {
-            const stLine = document.getElementById('status-line');
-            stLine.innerText = "Поиск устройства...";
-            
             device = await navigator.bluetooth.requestDevice({
-                filters: [{ name: 'TermoMaster' }],
-                optionalServices: ['12345678-1234-5678-1234-567812345678']
+                filters: [
+                    { services: [UUID_SERV] },
+                    { namePrefix: 'Termo' }
+                ]
             });
 
             const server = await device.gatt.connect();
-            const service = await server.getPrimaryService('12345678-1234-5678-1234-567812345678');
-            cmdChar = await service.getCharacteristic('87654321-4321-4321-4321-210987654321');
-            dataChar = await service.getCharacteristic('11111111-2222-3333-4444-555555555555');
+            const service = await server.getPrimaryService(UUID_SERV);
+            cmdChar = await service.getCharacteristic(UUID_CMD);
+            const dataChar = await service.getCharacteristic(UUID_DATA);
 
-            // Подписка на данные от Мастера
             await dataChar.startNotifications();
             dataChar.addEventListener('characteristicvaluechanged', (e) => {
-                const raw = new TextDecoder().decode(e.target.value);
-                // Формат от мастера: TEMP,RELAY_STR,LOCK_CHAR (например "45.2,ON,L")
-                const parts = raw.split(',');
-                if (parts.length >= 2) {
-                    document.getElementById('temp').innerText = parts[0];
-                    const r = parts[1];
-                    const lock = parts[2] || "OK";
+                const str = new TextDecoder().decode(e.target.value);
+                const parts = str.split('|');
+                
+                if (parts.length === 3) {
+                    const [t, r, lock] = parts;
                     
-                    const relEl = document.getElementById('relay');
-                    relEl.innerText = r;
-                    relEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
-
+                    document.getElementById('temp').innerText = t + "°C";
+                    
+                    const relayEl = document.getElementById('relay');
+                    relayEl.innerText = r;
+                    relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
+            
+                    const stLine = document.getElementById('status-line');
                     if (lock === "L") {
-                        stLine.innerHTML = "Статус: <span style='color:#ff9800;'>ГИСТЕРЕЗИС (-5°C)</span>";
+                        stLine.innerHTML = "Статус: <span style='color:#ff9800; font-weight:bold;'>ГИСТЕРЕЗИС (-5°C)</span>";
                     } else {
-                        stLine.innerHTML = "Статус: <span style='color:#4caf50;'>В СЕТИ</span>";
+                        stLine.innerHTML = "Статус: <span style='color:#4caf50;'>В сети</span>";
                     }
                 }
             });
 
-            // Синхронизация времени
             const now = new Date();
             await send(`TIME:${now.getHours()},${now.getMinutes()}`);
-            
-            stLine.innerText = "Статус: В СЕТИ";
-            refreshUI(); // Обновляем текст кнопки после подключения
 
-        } catch (err) {
+            document.getElementById('connectBtn').innerText = "ПОДКЛЮЧЕНО";
+            document.getElementById('connectBtn').style.background = "#333";
+            
+            // Обновляем текст кнопки сразу после подключения
+            refreshUI();
+        } catch (err) { 
             console.error(err);
-            document.getElementById('status-line').innerText = "Ошибка подключения";
+            alert("Не удалось найти устройство. Убедитесь, что Master включен и Bluetooth активен."); 
         }
     }
 
@@ -201,8 +172,7 @@
         if (!cmdChar) return;
         try {
             await cmdChar.writeValue(new TextEncoder().encode(msg));
-            console.log("Отправлено:", msg);
-        } catch (e) { console.error("Ошибка BLE:", e); }
+        } catch (e) { console.error("Ошибка отправки:", e); }
     }
 </script>
 
