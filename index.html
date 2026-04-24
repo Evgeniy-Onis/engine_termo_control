@@ -7,8 +7,7 @@
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
         .card { background: #1e1e1e; padding: 2rem; border-radius: 1.5rem; width: 100%; max-width: 380px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .status-container { font-size: 0.9rem; margin-bottom: 0.5rem; color: #888; }
-        .time-display { font-size: 0.85rem; margin-bottom: 1rem; color: #aaa; height: 1.2rem; }
+        .status-container { font-size: 0.9rem; margin-bottom: 1rem; color: #888; }
         .temp-display { font-size: 4.5rem; font-weight: bold; color: #ff9800; margin: 0.5rem 0; }
         .relay-info { font-size: 1.2rem; margin-bottom: 1.5rem; }
         .btn { width: 100%; padding: 1rem; margin: 0.5rem 0; border: none; border-radius: 0.8rem; font-size: 1rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
@@ -22,14 +21,11 @@
         .scheduler { border-top: 1px dashed #444; margin-top: 1.2rem; padding-top: 1rem; }
         .sched-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
         input[type="time"] { background: #333; color: white; border: 1px solid #444; padding: 5px; border-radius: 5px; }
-        input[type="checkbox"] { cursor: pointer; width: 18px; height: 18px; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <div class="time-display" id="current-time">--:-- • -- --------</div>
-    
     <div class="status-container" id="status-line">Статус: Отключено</div>
     <div class="temp-display" id="temp">--°C</div>
     <div class="relay-info">Реле: <span id="relay">---</span></div>
@@ -49,11 +45,11 @@
 
         <div class="scheduler">
             <div class="sched-row">
-                <label>Время запуска:</label>
+                <label>Время:</label>
                 <input type="time" id="schedTime" value="07:00">
             </div>
             <div class="sched-row">
-                <label><input type="checkbox" id="checkTime" onchange="toggleMode('time')"> Планировщик</label>
+                <label><input type="checkbox" id="checkTime" onchange="toggleMode('time')"> По времени</label>
                 <label><input type="checkbox" id="checkInt" onchange="toggleMode('int')"> Интервалы</label>
             </div>
         </div>
@@ -61,143 +57,135 @@
 </div>
 
 <script>
-    let state = {
-        temp: 0,
-        relay: "OFF",
-        lock: "OK",
-        thr: 45.0,
-        schedTime: "07:00",
-        useSched: 0,
-        useInt: 0
-    };
+    const UUID_SERV = '12345678-1234-5678-1234-567812345678';
+    const UUID_CMD  = '87654321-4321-4321-4321-210987654321';
+    const UUID_DATA = '11111111-2222-3333-4444-555555555555';
 
-    let device, server, service, cmdChar, dataChar;
+    let device, cmdChar;
 
-    // Обновление времени в интерфейсе
-    function updateTime() {
-        const now = new Date();
-        const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-        const dateStr = now.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-        const timeEl = document.getElementById('current-time');
-        if (timeEl) {
-            timeEl.innerText = `${timeStr} • ${dateStr}`;
-        }
-    }
-    setInterval(updateTime, 1000);
-    updateTime();
-
-    // Обработка переключателей режимов (Планировщик / Интервал)
+    // --- НОВАЯ ЛОГИКА ИНТЕРФЕЙСА ---
     function toggleMode(mode) {
-        const cTime = document.getElementById('checkTime');
-        const cInt = document.getElementById('checkInt');
+        const isT = document.getElementById('checkTime');
+        const isI = document.getElementById('checkInt');
 
-        if (mode === 'time') {
-            if (cTime.checked) cInt.checked = false;
-        } else {
-            if (cInt.checked) cTime.checked = false;
-        }
-        
-        state.useSched = cTime.checked ? 1 : 0;
-        state.useInt = cInt.checked ? 1 : 0;
-        
-        // Автоматически отправляем конфиг при смене режима
-        sendConfig();
+        // Запрещаем выбирать оба режима сразу
+        if (mode === 'time' && isT.checked) isI.checked = false;
+        if (mode === 'int' && isI.checked) isT.checked = false;
+
+        refreshUI();
     }
 
-    // Главная кнопка "УСТАНОВИТЬ И ВКЛ"
+    function refreshUI() {
+        if (!cmdChar) return; // Не меняем цвет кнопки, пока не подключились
+        
+        const isT = document.getElementById('checkTime').checked;
+        const isI = document.getElementById('checkInt').checked;
+        const btn = document.getElementById('mainBtn');
+
+        if (isT) {
+            btn.innerText = "ЗАПУСТИТЬ ПО ТАЙМЕРУ";
+            btn.style.background = "#9c27b0"; 
+        } else if (isI) {
+            btn.innerText = "ЗАПУСТИТЬ ИНТЕРВАЛ";
+            btn.style.background = "#009688";
+        } else {
+            btn.innerText = "УСТАНОВИТЬ И ВКЛ";
+            btn.style.background = "#2196f3";
+        }
+    }
+
     async function handleMainAction() {
-        if (!device) {
-            await connect();
+        if (!cmdChar) {
+            alert("Сначала подключитесь к устройству!");
+            return;
+        }
+
+        const isT = document.getElementById('checkTime').checked;
+        const isI = document.getElementById('checkInt').checked;
+
+        if (isT || isI) {
+            // Если выбран режим планировщика - шлем команду CFG
+            const thr = document.getElementById('thrSlider').value;
+            const time = document.getElementById('schedTime').value;
+            const useT = isT ? 1 : 0;
+            const useI = isI ? 1 : 0;
+            await send(`CFG:${thr},${time},${useT},${useI}`);
         } else {
-            // Обновляем порог из слайдера перед включением
-            state.thr = parseFloat(document.getElementById('thrSlider').value);
-            await sendConfig();
-            await send("ON");
+            // Если галочки сняты - обычный ручной пуск
+            await send('T:' + document.getElementById('thrSlider').value);
         }
     }
 
+    // --- СТАРЫЕ ФУНКЦИИ СВЯЗИ ---
     async function connect() {
-        try {
-            const connectBtn = document.getElementById('connectBtn');
-            connectBtn.innerText = "ПОИСК...";
-            
-            device = await navigator.bluetooth.requestDevice({
-                filters: [{ services: ['12345678-1234-5678-1234-567812345678'] }]
-            });
-
-            server = await device.gatt.connect();
-            service = await server.getPrimaryService('12345678-1234-5678-1234-567812345678');
-            cmdChar = await service.getCharacteristic('87654321-4321-4321-4321-210987654321');
-            dataChar = await service.getCharacteristic('11111111-2222-3333-4444-555555555555');
-
-            await dataChar.startNotifications();
-            
-            dataChar.addEventListener('characteristicvaluechanged', (e) => {
-                const raw = new TextDecoder().decode(e.target.value);
-                const p = raw.split('|'); 
-                
-                if (p.length >= 7) {
-                    // Парсинг: temp|relay|lock|thr|sched_time|use_sched|use_int
-                    const temp = p[0];
-                    const relay = p[1];
-                    const lock = p[2];
-                    const thr = p[3];
-                    const sTime = p[4];
-                    const uSched = parseInt(p[5]);
-                    const uInt = parseInt(p[6]);
-
-                    document.getElementById('temp').innerText = temp + "°C";
-                    document.getElementById('thrVal').innerText = thr;
-                    document.getElementById('thrSlider').value = thr;
+            try {
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { services: [UUID_SERV] },
+                        { namePrefix: 'Termo' }
+                    ]
+                });
+    
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(UUID_SERV);
+                cmdChar = await service.getCharacteristic(UUID_CMD);
+                const dataChar = await service.getCharacteristic(UUID_DATA);
+    
+                await dataChar.startNotifications();
+                dataChar.addEventListener('characteristicvaluechanged', (e) => {
+                    // Читаем ответ, вычищаем возможные нулевые байты (\0) и пробелы
+                    const str = new TextDecoder().decode(e.target.value).replace(/\0/g, '').trim();
+                    const parts = str.split('|');
                     
-                    const relayEl = document.getElementById('relay');
-                    relayEl.innerText = (relay === "ON") ? "ВКЛЮЧЕН" : "ВЫКЛЮЧЕН";
-                    relayEl.style.color = (relay === "ON") ? "#ff5252" : "#4caf50";
-
-                    const stLine = document.getElementById('status-line');
-                    if (lock === "L") {
-                        stLine.innerHTML = "Статус: <span style='color:#ff9800; font-weight:bold;'>ГИСТЕРЕЗИС (-5°C)</span>";
-                    } else {
-                        stLine.innerHTML = "Статус: <span style='color:#4caf50;'>В сети</span>";
+                    // Температура ВСЕГДА идет первой. Выводим её безоговорочно:
+                    if (parts[0]) {
+                        document.getElementById('temp').innerText = parts[0] + "°C";
                     }
-
-                    // Синхронизируем чекбоксы с реальным состоянием ESP
-                    document.getElementById('checkTime').checked = (uSched === 1);
-                    document.getElementById('checkInt').checked = (uInt === 1);
-                    document.getElementById('schedTime').value = sTime;
-                }
-            });
-
-            // Синхронизация времени и запрос данных
-            const now = new Date();
-            await send(`TIME:${now.getHours()},${now.getMinutes()}`);
-            setTimeout(() => send("GET"), 500);
-
-            connectBtn.innerText = "ПОДКЛЮЧЕНО";
-            connectBtn.style.background = "#333";
-
-        } catch (err) {
-            console.error(err);
-            document.getElementById('connectBtn').innerText = "ОШИБКА";
+                    
+                    // Если пришел полный новый пакет (temp | relay | lock) - обновляем остальное
+                    if (parts.length >= 3) {
+                        const r = parts[1];
+                        const lock = parts[2];
+                        
+                        const relayEl = document.getElementById('relay');
+                        if (relayEl) {
+                            relayEl.innerText = r;
+                            relayEl.style.color = (r === "ON") ? "#4caf50" : "#f44336";
+                        }
+                
+                        const stLine = document.getElementById('status-line');
+                        if (stLine) {
+                            if (lock === "L") {
+                                stLine.innerHTML = "Статус: <span style='color:#ff9800; font-weight:bold;'>ГИСТЕРЕЗИС (-5°C)</span>";
+                            } else {
+                                stLine.innerHTML = "Статус: <span style='color:#4caf50;'>В сети</span>";
+                            }
+                        }
+                    }
+                });
+    
+                // Синхронизация времени при подключении
+                const now = new Date();
+                await send(`TIME:${now.getHours()},${now.getMinutes()}`);
+    
+                document.getElementById('connectBtn').innerText = "ПОДКЛЮЧЕНО";
+                document.getElementById('connectBtn').style.background = "#333";
+                
+                // Если добавлена функция обновления кнопок таймера - дергаем её
+                if (typeof refreshUI === 'function') refreshUI();
+                
+            } catch (err) { 
+                console.error(err);
+                alert("Не удалось найти устройство. Убедитесь, что Master включен и Bluetooth активен."); 
+            }
         }
-    }
 
-    async function sendConfig() {
-        const thr = document.getElementById('thrSlider').value;
-        const time = document.getElementById('schedTime').value;
-        const uSched = document.getElementById('checkTime').checked ? 1 : 0;
-        const uInt = document.getElementById('checkInt').checked ? 1 : 0;
         
-        // Формат для Master: CFG:порог,время,планировщик,интервал
-        await send(`CFG:${thr},${time},${uSched},${uInt}`);
-    }
-
     async function send(msg) {
         if (!cmdChar) return;
         try {
             await cmdChar.writeValue(new TextEncoder().encode(msg));
-            console.log("Sent:", msg);
-        } catch (e) { console.error("Send Error:", e); }
+        } catch (e) { console.error("Ошибка отправки:", e); }
     }
 </script>
 
